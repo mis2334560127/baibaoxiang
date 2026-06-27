@@ -1,0 +1,23 @@
+# 百宝箱 (BaibaoBOX) - Python Dependencies
+# Windows 桌面小工具 · 图片压缩 / PDF转Word / 屏幕录制
+
+# === UI 框架 ===
+PyQt6>=6.6.0
+
+# === 图片处理 ===
+Pillow>=10.2.0
+
+# === PDF 转 Word ===
+pdf2docx>=0.5.8
+python-docx>=1.1.0
+PyMuPDF>=1.23.0
+pytesseract>=0.3.10
+
+# === 屏幕录制辅助（Windows GDI） ===
+pywin32>=306
+
+# === 系统工具 ===
+psutil>=5.9.0
+
+# === 打包发布（开发期） ===
+pyinstaller>=6.3.0

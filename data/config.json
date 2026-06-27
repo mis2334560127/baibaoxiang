@@ -1,0 +1,22 @@
+{
+  "theme": "blue",
+  "output_dir": "D:/视频",
+  "ffmpeg_path": "",
+  "ad_enabled": false,
+  "ad_api_url": "",
+  "ad_api_key": "",
+  "ad_refresh_minutes": 30,
+  "window_width": 1920,
+  "window_height": 1017,
+  "window_maximized": true,
+  "compress_target_size_kb": 50,
+  "compress_quality": 75,
+  "compress_mode": "size",
+  "compress_max_width": 0,
+  "compress_max_height": 0,
+  "record_fps": 15,
+  "record_codec": "libx264",
+  "record_format": "mp4",
+  "pdf_preserve_formatting": true,
+  "pdf_preserve_images": true
+}

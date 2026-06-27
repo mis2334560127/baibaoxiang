@@ -1,0 +1,1639 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>百宝箱 — 完整使用说明书 v1.0.1</title>
+<style>
+  :root {
+    --primary: #1877F2;
+    --primary-dark: #0C5BC4;
+    --accent: #3B9EFF;
+    --success: #16A34A;
+    --warning: #D97706;
+    --danger: #DC2626;
+    --info: #0891B2;
+    --bg: #F8FAFF;
+    --surface: #FFFFFF;
+    --border: #E2EAF4;
+    --text: #1A2035;
+    --text-muted: #64748B;
+    --code-bg: #F1F5FE;
+    --sidebar-w: 270px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.8;
+    display: flex;
+  }
+
+  /* ===== 侧边导航 ===== */
+  #sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: var(--sidebar-w);
+    height: 100vh;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    z-index: 100;
+    box-shadow: 2px 0 12px rgba(24,119,242,0.06);
+  }
+
+  .sidebar-logo {
+    padding: 24px 20px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-logo h1 {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .sidebar-logo p {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: white;
+  }
+
+  .sidebar-nav { padding: 12px 0; flex: 1; }
+  .nav-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 14px 20px 6px;
+  }
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 20px;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 14px;
+    border-left: 3px solid transparent;
+    transition: all 0.2s;
+  }
+  .nav-link:hover, .nav-link.active {
+    color: var(--primary);
+    background: #EEF4FF;
+    border-left-color: var(--primary);
+  }
+  .nav-link span.icon { font-size: 16px; width: 20px; text-align: center; }
+
+  .sidebar-footer {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* ===== 主内容 ===== */
+  #main {
+    margin-left: var(--sidebar-w);
+    flex: 1;
+    max-width: 920px;
+    padding: 40px 48px 80px;
+  }
+
+  /* ===== 封面 ===== */
+  .cover {
+    background: linear-gradient(135deg, #1877F2 0%, #3B9EFF 60%, #7CC3FF 100%);
+    border-radius: 20px;
+    padding: 48px;
+    color: white;
+    margin-bottom: 48px;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::before {
+    content: "";
+    position: absolute;
+    top: -40px; right: -40px;
+    width: 200px; height: 200px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+  }
+  .cover::after {
+    content: "";
+    position: absolute;
+    bottom: -60px; right: 80px;
+    width: 280px; height: 280px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+  }
+  .cover-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  .cover h1 { font-size: 40px; font-weight: 900; letter-spacing: -0.5px; }
+  .cover p { font-size: 16px; opacity: 0.9; margin-top: 10px; max-width: 500px; line-height: 1.6; }
+  .cover-meta {
+    display: flex;
+    gap: 24px;
+    margin-top: 28px;
+    flex-wrap: wrap;
+  }
+  .cover-meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .cover-meta-label { font-size: 11px; opacity: 0.7; letter-spacing: 0.5px; }
+  .cover-meta-value { font-size: 15px; font-weight: 700; }
+
+  /* ===== 章节标题 ===== */
+  .section {
+    margin-bottom: 52px;
+    scroll-margin-top: 24px;
+  }
+
+  h2 {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--text);
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  h2 .h2-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: white; flex-shrink: 0;
+  }
+
+  h3 {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 28px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  h3::before {
+    content: "";
+    width: 4px; height: 18px;
+    background: var(--primary);
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  h4 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 20px 0 8px;
+  }
+
+  p { margin-bottom: 12px; color: var(--text); }
+
+  /* ===== 信息框 ===== */
+  .callout {
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .callout-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+  .callout-content { flex: 1; }
+  .callout-content strong { display: block; margin-bottom: 4px; font-size: 14px; }
+  .callout-content p { margin: 0; font-size: 14px; }
+  .callout.info { background: #EEF7FF; border: 1px solid #BDD9FF; }
+  .callout.info .callout-icon, .callout.info strong { color: var(--primary); }
+  .callout.success { background: #ECFDF5; border: 1px solid #A7F3D0; }
+  .callout.success .callout-icon, .callout.success strong { color: var(--success); }
+  .callout.warning { background: #FFFBEB; border: 1px solid #FDE68A; }
+  .callout.warning .callout-icon, .callout.warning strong { color: var(--warning); }
+  .callout.danger { background: #FFF1F2; border: 1px solid #FECDD3; }
+  .callout.danger .callout-icon, .callout.danger strong { color: var(--danger); }
+
+  /* ===== 代码块 ===== */
+  pre {
+    background: #1A2035;
+    color: #E2EAF4;
+    border-radius: 12px;
+    padding: 20px 24px;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", "Consolas", "Source Code Pro", monospace;
+    font-size: 13.5px;
+    line-height: 1.7;
+    margin: 12px 0 20px;
+    position: relative;
+  }
+  pre .lang-tag {
+    position: absolute;
+    top: 10px; right: 14px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: 0.5px;
+  }
+  code {
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    font-size: 13px;
+    background: var(--code-bg);
+    color: var(--primary-dark);
+    border-radius: 5px;
+    padding: 2px 6px;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+
+  /* 语法高亮 */
+  .kw { color: #F59E0B; }
+  .str { color: #86EFAC; }
+  .cmt { color: #6B7280; font-style: italic; }
+  .fn { color: #93C5FD; }
+  .num { color: #F9A8D4; }
+  .var { color: #E2EAF4; }
+  .op { color: #7DD3FC; }
+
+  /* ===== 表格 ===== */
+  .table-wrap {
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    margin: 14px 0 24px;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  thead { background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 100%); }
+  thead th {
+    color: white;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 12px 16px;
+    text-align: left;
+    letter-spacing: 0.3px;
+  }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.15s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: #F5F9FF; }
+  tbody td { padding: 11px 16px; font-size: 14px; vertical-align: top; }
+  .badge {
+    display: inline-block;
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge-blue { background: #EEF4FF; color: var(--primary); }
+  .badge-green { background: #ECFDF5; color: var(--success); }
+  .badge-orange { background: #FFFBEB; color: var(--warning); }
+  .badge-red { background: #FFF1F2; color: var(--danger); }
+  .badge-gray { background: #F1F5F9; color: #64748B; }
+
+  /* ===== 步骤块 ===== */
+  .steps { list-style: none; margin: 12px 0 24px; }
+  .steps li {
+    display: flex;
+    gap: 16px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .steps li:last-child { border-bottom: none; }
+  .step-num {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: white;
+    font-size: 14px;
+    font-weight: 800;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .step-body { flex: 1; }
+  .step-body h4 { margin: 0 0 6px; font-size: 15px; color: var(--text); }
+  .step-body p { margin: 0; font-size: 14px; color: var(--text-muted); }
+
+  /* ===== 功能卡片 ===== */
+  .feature-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+    margin: 16px 0 24px;
+  }
+  .feature-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    transition: all 0.2s;
+  }
+  .feature-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 4px 20px rgba(24,119,242,0.1);
+    transform: translateY(-2px);
+  }
+  .feature-card-icon {
+    font-size: 28px;
+    margin-bottom: 10px;
+  }
+  .feature-card h4 { margin: 0 0 8px; font-size: 15px; }
+  .feature-card p { margin: 0; font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+
+  /* ===== 问答 ===== */
+  .faq-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .faq-q {
+    padding: 16px 20px;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text);
+  }
+  .faq-q::before { content: "Q"; color: var(--primary); font-size: 13px; font-weight: 900; width: 20px; height: 20px; background: #EEF4FF; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .faq-a {
+    padding: 0 20px 16px 50px;
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.7;
+  }
+
+  /* ===== 进度/状态指示 ===== */
+  .req-table td:first-child { font-weight: 600; }
+  .req-row-min td { background: #FFFBEB; }
+  .req-row-rec td { background: #ECFDF5; }
+
+  /* ===== 文件树 ===== */
+  .file-tree {
+    background: #1A2035;
+    color: #E2EAF4;
+    border-radius: 12px;
+    padding: 20px 24px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    line-height: 1.9;
+    margin: 12px 0 20px;
+  }
+  .file-tree .dir { color: #93C5FD; }
+  .file-tree .file { color: #E2EAF4; }
+  .file-tree .comment { color: #6B7280; }
+
+  /* ===== 主题色展示 ===== */
+  .theme-chips {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 12px 0 20px;
+  }
+  .theme-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .color-dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ===== 顶部进度条 ===== */
+  #progress-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+    transform-origin: left;
+    transform: scaleX(0);
+    z-index: 999;
+    transition: transform 0.1s;
+  }
+
+  /* ===== 返回顶部 ===== */
+  #back-top {
+    position: fixed;
+    bottom: 32px; right: 32px;
+    width: 44px; height: 44px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    font-size: 18px;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(24,119,242,0.4);
+    opacity: 0;
+    transition: opacity 0.3s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #back-top.show { opacity: 1; }
+
+  ul, ol { padding-left: 20px; margin-bottom: 12px; }
+  li { margin-bottom: 6px; font-size: 14px; color: var(--text); }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+
+  @media (max-width: 900px) {
+    #sidebar { transform: translateX(-100%); }
+    #main { margin-left: 0; padding: 24px 20px 60px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<!-- ===== 侧边导航 ===== -->
+<nav id="sidebar">
+  <div class="sidebar-logo">
+    <h1>
+      <div class="logo-icon">🧰</div>
+      百宝箱
+    </h1>
+    <p>使用说明书 · v1.0.1</p>
+  </div>
+
+  <div class="sidebar-nav">
+    <div class="nav-section-title">快速开始</div>
+    <a href="#sec-intro" class="nav-link"><span class="icon">📋</span>产品简介</a>
+    <a href="#sec-env" class="nav-link"><span class="icon">💻</span>环境要求</a>
+    <a href="#sec-install" class="nav-link"><span class="icon">⚙️</span>安装指南</a>
+    <a href="#sec-launch" class="nav-link"><span class="icon">🚀</span>首次启动</a>
+
+    <div class="nav-section-title">功能使用</div>
+    <a href="#sec-compress" class="nav-link"><span class="icon">🖼️</span>图片批量压缩</a>
+    <a href="#sec-pdf" class="nav-link"><span class="icon">📄</span>PDF 转 Word</a>
+    <a href="#sec-record" class="nav-link"><span class="icon">🎬</span>屏幕录制</a>
+    <a href="#sec-theme" class="nav-link"><span class="icon">🎨</span>主题切换</a>
+    <a href="#sec-settings" class="nav-link"><span class="icon">🔧</span>系统设置</a>
+
+    <div class="nav-section-title">开发部署</div>
+    <a href="#sec-dev-env" class="nav-link"><span class="icon">🐍</span>开发环境搭建</a>
+    <a href="#sec-structure" class="nav-link"><span class="icon">📂</span>项目结构</a>
+    <a href="#sec-build" class="nav-link"><span class="icon">📦</span>打包发布</a>
+    <a href="#sec-ad" class="nav-link"><span class="icon">📢</span>广告位配置</a>
+
+    <div class="nav-section-title">其他</div>
+    <a href="#sec-faq" class="nav-link"><span class="icon">❓</span>常见问题</a>
+    <a href="#sec-changelog" class="nav-link"><span class="icon">📝</span>版本历史</a>
+  </div>
+
+  <div class="sidebar-footer">
+    <div>🔒 仅本地运行 · 数据不上传</div>
+    <div style="margin-top:4px">Windows 10/11 · Python 3.11+</div>
+  </div>
+</nav>
+
+<!-- ===== 主内容 ===== -->
+<main id="main">
+
+  <!-- 封面 -->
+  <div class="cover">
+    <div class="cover-badge">📖 用户使用说明书</div>
+    <h1>🧰 百宝箱</h1>
+    <p>Windows 桌面小工具 — 图片批量压缩、PDF 转 Word、屏幕录制，全部本地运行，数据不上传，安全放心。</p>
+    <div class="cover-meta">
+      <div class="cover-meta-item">
+        <span class="cover-meta-label">当前版本</span>
+        <span class="cover-meta-value">v1.0.1</span>
+      </div>
+      <div class="cover-meta-item">
+        <span class="cover-meta-label">适用系统</span>
+        <span class="cover-meta-value">Windows 10 / 11</span>
+      </div>
+      <div class="cover-meta-item">
+        <span class="cover-meta-label">文档更新</span>
+        <span class="cover-meta-value">2026-06-26</span>
+      </div>
+      <div class="cover-meta-item">
+        <span class="cover-meta-label">技术栈</span>
+        <span class="cover-meta-value">Python 3.13 + PyQt6</span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===== 1. 产品简介 ===== -->
+  <section class="section" id="sec-intro">
+    <h2><div class="h2-icon">📋</div>产品简介</h2>
+
+    <p>《百宝箱》是一款专为 Windows 用户打造的本地小工具集合，聚焦办公常用场景，无需注册账号、无需联网，全部处理在本地完成，数据安全可靠。</p>
+
+    <div class="feature-cards">
+      <div class="feature-card">
+        <div class="feature-card-icon">🖼️</div>
+        <h4>图片批量压缩</h4>
+        <p>支持拖拽批量导入，按目标文件大小（KB）或质量（%）两种模式精准压缩，专为政府网站、表单系统等对文件大小有严格要求的场景设计。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card-icon">📄</div>
+        <h4>PDF 转 Word</h4>
+        <p>将 PDF 文档转换为可编辑的 Word（.docx）格式。支持数字型 PDF（保留排版）和扫描版 PDF（OCR 识别文字），可选择是否保留图片和格式。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card-icon">🎬</div>
+        <h4>屏幕录制</h4>
+        <p>调用 Windows 系统 GDI 能力，实时截帧并通过 FFmpeg 编码为高清 MP4 视频。支持帧率调节、区域录制（规划中）、暂停/继续。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card-icon">🎨</div>
+        <h4>5 套主题色</h4>
+        <p>内置海天蓝、青翠绿、星空紫、暖阳橙、玫瑰红五套主题，设置页面一键切换，即时生效，个性化你的工作界面。</p>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <div class="callout-icon">ℹ️</div>
+      <div class="callout-content">
+        <strong>本地优先原则</strong>
+        <p>百宝箱所有核心功能均在本地计算机执行，不向任何服务器上传您的文件内容。广告位功能（如已启用）仅拉取广告素材，不涉及用户文件。</p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===== 2. 环境要求 ===== -->
+  <section class="section" id="sec-env">
+    <h2><div class="h2-icon">💻</div>环境要求</h2>
+
+    <h3>操作系统</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>系统</th><th>版本</th><th>支持状态</th><th>备注</th></tr></thead>
+        <tbody>
+          <tr><td>Windows 11</td><td>21H2 及以上</td><td><span class="badge badge-green">✅ 完全支持</span></td><td>推荐运行环境</td></tr>
+          <tr><td>Windows 10</td><td>1903 (2004) 及以上</td><td><span class="badge badge-green">✅ 完全支持</span></td><td>最低建议版本</td></tr>
+          <tr><td>Windows 10</td><td>1809 及更早</td><td><span class="badge badge-orange">⚠️ 部分支持</span></td><td>PyQt6 可能有兼容问题</td></tr>
+          <tr><td>Windows 7 / 8 / 8.1</td><td>—</td><td><span class="badge badge-red">❌ 不支持</span></td><td>Python 3.13 不支持</td></tr>
+          <tr><td>macOS / Linux</td><td>—</td><td><span class="badge badge-red">❌ 不支持</span></td><td>pywin32 为 Windows 专属</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>硬件最低要求</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>配置项</th><th>最低配置</th><th>推荐配置</th><th>说明</th></tr></thead>
+        <tbody class="req-table">
+          <tr class="req-row-min"><td>CPU</td><td>双核 1.8 GHz</td><td>四核 2.5 GHz+</td><td>屏幕录制帧率与 CPU 性能正相关</td></tr>
+          <tr class="req-row-min"><td>内存</td><td>4 GB RAM</td><td>8 GB RAM+</td><td>批量处理大图时内存占用较高</td></tr>
+          <tr class="req-row-min"><td>硬盘空间</td><td>500 MB 可用</td><td>2 GB+</td><td>含 Python 运行时、FFmpeg 及输出缓存</td></tr>
+          <tr class="req-row-min"><td>显示分辨率</td><td>1280×720</td><td>1920×1080+</td><td>窗口最小宽度 900px</td></tr>
+          <tr class="req-row-min"><td>显卡</td><td>集成显卡</td><td>—</td><td>录制编码走 CPU，不依赖 GPU</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>必需软件依赖</h3>
+
+    <div class="callout danger">
+      <div class="callout-icon">🔴</div>
+      <div class="callout-content">
+        <strong>屏幕录制功能必须安装 FFmpeg</strong>
+        <p>FFmpeg 是屏幕录制功能的核心编码器，<b>缺少则无法录制视频</b>。图片压缩和 PDF 转 Word 功能无此要求，可正常使用。</p>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>依赖项</th><th>版本要求</th><th>用途</th><th>是否必须</th><th>获取方式</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Python</strong></td>
+            <td>3.11 — 3.13.x</td>
+            <td>运行时环境</td>
+            <td><span class="badge badge-red">必须</span></td>
+            <td>python.org / 安装包自带</td>
+          </tr>
+          <tr>
+            <td><strong>FFmpeg</strong></td>
+            <td>5.0+（建议 6.x）</td>
+            <td>屏幕录制视频编码</td>
+            <td><span class="badge badge-orange">录制必须</span></td>
+            <td>ffmpeg.org 或 winget</td>
+          </tr>
+          <tr>
+            <td>PyQt6</td>
+            <td>≥ 6.6.0</td>
+            <td>图形界面框架</td>
+            <td><span class="badge badge-red">必须</span></td>
+            <td>pip install PyQt6</td>
+          </tr>
+          <tr>
+            <td>Pillow</td>
+            <td>≥ 10.2.0</td>
+            <td>图片处理压缩</td>
+            <td><span class="badge badge-red">必须</span></td>
+            <td>pip install Pillow</td>
+          </tr>
+          <tr>
+            <td>pdf2docx</td>
+            <td>≥ 0.5.8</td>
+            <td>PDF 转 Word 核心</td>
+            <td><span class="badge badge-red">必须</span></td>
+            <td>pip install pdf2docx</td>
+          </tr>
+          <tr>
+            <td>PyMuPDF</td>
+            <td>≥ 1.23.0</td>
+            <td>PDF 页面渲染/分析</td>
+            <td><span class="badge badge-red">必须</span></td>
+            <td>pip install PyMuPDF</td>
+          </tr>
+          <tr>
+            <td>python-docx</td>
+            <td>≥ 1.1.0</td>
+            <td>Word 文档生成</td>
+            <td><span class="badge badge-red">必须</span></td>
+            <td>pip install python-docx</td>
+          </tr>
+          <tr>
+            <td>pywin32</td>
+            <td>≥ 306</td>
+            <td>Windows GDI 截图</td>
+            <td><span class="badge badge-orange">录制必须</span></td>
+            <td>pip install pywin32</td>
+          </tr>
+          <tr>
+            <td>psutil</td>
+            <td>≥ 5.9.0</td>
+            <td>系统资源监控</td>
+            <td><span class="badge badge-blue">推荐</span></td>
+            <td>pip install psutil</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Python 包版本速查</h3>
+    <p>以下是 <code>requirements.txt</code> 中完整的依赖声明，可直接用于安装：</p>
+    <pre><span class="cmt"># 百宝箱 依赖清单 (requirements.txt)</span>
+<span class="cmt"># 运行环境: Python 3.11 ~ 3.13, Windows 10/11 64-bit</span>
+
+<span class="cmt"># UI 框架</span>
+<span class="var">PyQt6</span><span class="op">>=</span><span class="num">6.6.0</span>
+
+<span class="cmt"># 图片处理</span>
+<span class="var">Pillow</span><span class="op">>=</span><span class="num">10.2.0</span>
+
+<span class="cmt"># PDF 转 Word</span>
+<span class="var">pdf2docx</span><span class="op">>=</span><span class="num">0.5.8</span>
+<span class="var">python-docx</span><span class="op">>=</span><span class="num">1.1.0</span>
+<span class="var">PyMuPDF</span><span class="op">>=</span><span class="num">1.23.0</span>
+
+<span class="cmt"># 屏幕录制辅助（Windows GDI）</span>
+<span class="var">pywin32</span><span class="op">>=</span><span class="num">306</span>
+
+<span class="cmt"># 系统工具</span>
+<span class="var">psutil</span><span class="op">>=</span><span class="num">5.9.0</span>
+
+<span class="cmt"># 打包发布（仅开发环境需要）</span>
+<span class="var">pyinstaller</span><span class="op">>=</span><span class="num">6.3.0</span><span class="lang-tag">requirements.txt</span></pre>
+  </section>
+
+
+  <!-- ===== 3. 安装指南 ===== -->
+  <section class="section" id="sec-install">
+    <h2><div class="h2-icon">⚙️</div>安装指南</h2>
+
+    <div class="callout info">
+      <div class="callout-icon">💡</div>
+      <div class="callout-content">
+        <strong>两种安装方式</strong>
+        <p><b>方式 A（推荐）</b>：使用打包好的 <code>BaibaoBOX-v1.0.1-Setup.exe</code> 安装包，双击安装，无需配置 Python；<br>
+        <b>方式 B（开发者）</b>：克隆源代码，手动配置 Python 环境后运行，适合开发调试。</p>
+      </div>
+    </div>
+
+    <h3>方式 A — 安装包安装（推荐普通用户）</h3>
+
+    <ul class="steps">
+      <li>
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>下载安装包</h4>
+          <p>从官方渠道获取 <code>BaibaoBOX-v1.0.1-Setup.exe</code>（约 100MB，含 Python 运行时 + FFmpeg）。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>以管理员身份运行安装程序</h4>
+          <p>右键 → "以管理员身份运行"。若系统弹出 UAC 提示，点击「是」允许。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>选择安装目录</h4>
+          <p>默认路径：<code>C:\Program Files\BaibaoBOX\</code>。建议保持默认，不要安装到中文路径或含空格的目录。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>完成安装</h4>
+          <p>安装程序将自动创建桌面快捷方式和开始菜单项。点击"完成"即可。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h4>启动验证</h4>
+          <p>双击桌面图标，主界面正常加载则安装成功。首次启动会在 <code>桌面\百宝箱输出\</code> 自动创建默认输出文件夹。</p>
+        </div>
+      </li>
+    </ul>
+
+    <h3>方式 B — 源码运行（开发者/高级用户）</h3>
+
+    <h4>第一步：安装 Python 3.11 ~ 3.13</h4>
+    <p>访问 <a href="https://www.python.org/downloads/" style="color:var(--primary)">python.org</a> 下载并安装 Python，安装时务必勾选 <strong>「Add Python to PATH」</strong>。</p>
+    <pre><span class="cmt"># 验证 Python 安装</span>
+<span class="var">python</span> <span class="op">--version</span>
+<span class="cmt"># 应输出: Python 3.13.x 或 Python 3.11.x</span>
+
+<span class="var">pip</span> <span class="op">--version</span>
+<span class="cmt"># 应输出: pip XX.X.X</span><span class="lang-tag">cmd</span></pre>
+
+    <h4>第二步：获取项目代码</h4>
+    <pre><span class="cmt"># 克隆仓库（或直接下载 ZIP 解压）</span>
+<span class="var">git</span> clone https://github.com/your-org/baibaoxiang.git
+<span class="var">cd</span> baibaoxiang<span class="lang-tag">cmd</span></pre>
+
+    <h4>第三步：创建虚拟环境（推荐）</h4>
+    <pre><span class="cmt"># 创建 .venv 虚拟环境（推荐，避免污染系统 Python）</span>
+<span class="var">python</span> <span class="op">-m</span> venv .venv
+
+<span class="cmt"># 激活虚拟环境</span>
+<span class="var">.venv\Scripts\activate</span>
+
+<span class="cmt"># 确认激活成功（命令行前缀应显示 (.venv)）</span>
+<span class="var">python</span> <span class="op">--version</span><span class="lang-tag">cmd</span></pre>
+
+    <h4>第四步：安装 Python 依赖</h4>
+    <pre><span class="cmt"># 一键安装所有依赖（约 300MB，首次需要等待几分钟）</span>
+<span class="var">pip</span> install <span class="op">-r</span> requirements.txt
+
+<span class="cmt"># 如果下载速度慢，可使用国内镜像源</span>
+<span class="var">pip</span> install <span class="op">-r</span> requirements.txt <span class="op">-i</span> https://pypi.tuna.tsinghua.edu.cn/simple<span class="lang-tag">cmd</span></pre>
+
+    <h4>第五步：安装 FFmpeg（屏幕录制必需）</h4>
+
+    <p><strong>推荐方式：winget 一键安装（Windows 10/11）</strong></p>
+    <pre><span class="cmt"># 使用 winget（系统内置包管理器）</span>
+<span class="var">winget</span> install <span class="op">--id</span> Gyan.FFmpeg
+
+<span class="cmt"># 验证安装</span>
+<span class="var">ffmpeg</span> <span class="op">-version</span>
+<span class="cmt"># 应输出: ffmpeg version 6.x.x ...</span><span class="lang-tag">cmd</span></pre>
+
+    <p><strong>手动安装方式：</strong></p>
+    <ol>
+      <li>访问 <a href="https://ffmpeg.org/download.html" style="color:var(--primary)">ffmpeg.org</a> 下载 Windows 版本（选择 <em>gyan.dev</em> 的 full build）</li>
+      <li>解压到如 <code>C:\ffmpeg\</code>（路径不要含中文）</li>
+      <li>将 <code>C:\ffmpeg\bin</code> 添加到系统环境变量 PATH</li>
+      <li>打开新的 cmd 窗口，运行 <code>ffmpeg -version</code> 验证</li>
+    </ol>
+
+    <div class="callout warning">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-content">
+        <strong>FFmpeg 路径不要含中文</strong>
+        <p>FFmpeg 的安装路径中不得包含中文字符或空格，否则会导致录制失败。如果系统 PATH 无法识别，可在百宝箱「设置 → 录制设置 → FFmpeg 路径」中手动填写完整路径（如 <code>C:\ffmpeg\bin\ffmpeg.exe</code>）。</p>
+      </div>
+    </div>
+
+    <h4>第六步：运行应用</h4>
+    <pre><span class="cmt"># 确保虚拟环境已激活</span>
+<span class="var">python</span> main.py<span class="lang-tag">cmd</span></pre>
+  </section>
+
+
+  <!-- ===== 4. 首次启动 ===== -->
+  <section class="section" id="sec-launch">
+    <h2><div class="h2-icon">🚀</div>首次启动</h2>
+
+    <h3>界面布局说明</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>区域</th><th>位置</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>侧边导航栏</td><td>左侧</td><td>功能页面入口，可切换 6 个功能页；底部显示主题色点</td></tr>
+          <tr><td>顶部工具栏</td><td>顶部</td><td>页面标题、广告横幅位（如已启用）、操作按钮</td></tr>
+          <tr><td>内容区</td><td>中间大区</td><td>当前功能页面主体内容</td></tr>
+          <tr><td>状态栏</td><td>底部</td><td>实时显示操作状态信息</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>首次启动自动完成</h3>
+    <ul>
+      <li>在 <code>data/</code> 目录创建本地 SQLite 数据库（<code>baibaobox.db</code>）</li>
+      <li>写入默认配置文件 <code>data/config.json</code></li>
+      <li>在桌面创建 <code>百宝箱输出/</code> 文件夹（默认输出目录）</li>
+      <li>加载默认主题：海天蓝</li>
+    </ul>
+
+    <div class="callout success">
+      <div class="callout-icon">✅</div>
+      <div class="callout-content">
+        <strong>启动成功标志</strong>
+        <p>看到首页的统计面板（图片压缩次数、PDF 转换次数、屏幕录制次数、累计节省空间）以及三个功能快捷卡片，说明应用已正常运行。</p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===== 5. 图片批量压缩 ===== -->
+  <section class="section" id="sec-compress">
+    <h2><div class="h2-icon">🖼️</div>图片批量压缩</h2>
+
+    <h3>支持格式</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>格式</th><th>压缩模式</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>JPG / JPEG</td><td>按大小 &amp; 按质量</td><td>最常用格式，支持精确大小控制</td></tr>
+          <tr><td>PNG</td><td>按大小（无损压缩）</td><td>PNG 使用无损压缩，按大小模式会转为 JPEG 以节省空间；按质量模式不压有损</td></tr>
+          <tr><td>WebP</td><td>按大小 &amp; 按质量</td><td>现代格式，压缩率更高</td></tr>
+          <tr><td>BMP</td><td>按大小</td><td>自动转换为 JPEG 压缩</td></tr>
+          <tr><td>TIFF</td><td>按大小</td><td>使用 LZW 无损压缩</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>压缩模式说明</h3>
+
+    <h4>📐 按大小压缩（Size Mode）</h4>
+    <p>设置目标文件大小（KB），程序使用<strong>二分搜索算法</strong>自动找到最接近的压缩参数，反复迭代直到结果大小落在目标 ±20KB 范围内。</p>
+    <ul>
+      <li>适用场景：政府网站、表单系统要求"图片不超过 500KB"等明确大小限制场景</li>
+      <li>默认目标：500 KB</li>
+      <li>可在设置页面修改默认值</li>
+    </ul>
+
+    <h4>🎚️ 按质量压缩（Quality Mode）</h4>
+    <p>直接指定压缩质量（1~100），压缩后大小以实际为准，不保证特定大小。</p>
+    <ul>
+      <li>适用场景：批量处理图片、控制总体质量水平</li>
+      <li>默认质量：75（画质与大小的较好平衡点）</li>
+      <li>建议范围：60~85 可兼顾效果与大小</li>
+    </ul>
+
+    <h3>操作步骤</h3>
+    <ul class="steps">
+      <li>
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>点击侧边栏「图片压缩」</h4>
+          <p>进入图片压缩功能页。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>导入图片</h4>
+          <p>方式一：将图片文件拖入中间的拖拽区（支持同时拖入多张）；<br>
+          方式二：点击拖拽区选择文件，弹出文件选择对话框（可多选）。<br>
+          图片将显示在下方文件列表中，含文件名、原始大小、状态信息。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>选择压缩模式并设置参数</h4>
+          <p>点击「按大小」或「按质量」切换模式，在右侧输入目标大小（KB）或质量（%）。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>选择输出目录（可选）</h4>
+          <p>默认输出到「桌面 → 百宝箱输出」文件夹。点击「更改输出目录」可自定义。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h4>开始压缩</h4>
+          <p>点击「开始压缩」按钮。列表中每个文件会显示进度，压缩完成后显示原始大小 → 压缩后大小 → 节省比例。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <h4>查看结果</h4>
+          <p>点击「打开输出目录」可直接打开结果文件夹。压缩文件命名格式：<code>原文件名_compressed.jpg</code>。</p>
+        </div>
+      </li>
+    </ul>
+
+    <div class="callout warning">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-content">
+        <strong>PNG 格式特别说明</strong>
+        <p>PNG 是无损格式，「按质量」模式对 PNG 文件不会产生明显的有损压缩效果。若需要大幅缩小 PNG 文件，请选择「按大小」模式，程序会自动转为 JPEG 格式以实现减小文件大小的目的。原始 PNG 文件不会被修改。</p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===== 6. PDF 转 Word ===== -->
+  <section class="section" id="sec-pdf">
+    <h2><div class="h2-icon">📄</div>PDF 转 Word</h2>
+
+    <h3>PDF 文档类型识别</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>PDF 类型</th><th>特征</th><th>转换方式</th><th>效果</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>数字型 PDF</td>
+            <td>可选中、可复制文字</td>
+            <td>pdf2docx 直接解析</td>
+            <td>⭐⭐⭐⭐⭐ 最佳，保留排版</td>
+          </tr>
+          <tr>
+            <td>扫描版 PDF</td>
+            <td>图片扫描，无法选中文字</td>
+            <td>PyMuPDF 渲染 + Tesseract OCR</td>
+            <td>⭐⭐⭐ 依赖 OCR 精度</td>
+          </tr>
+          <tr>
+            <td>混合型 PDF</td>
+            <td>部分页数字、部分扫描</td>
+            <td>自动分析每页类型分别处理</td>
+            <td>⭐⭐⭐⭐ 较好</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>操作步骤</h3>
+    <ul class="steps">
+      <li>
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>进入「PDF 转 Word」页面</h4>
+          <p>点击侧边栏 PDF 转 Word 入口。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>导入 PDF 文件</h4>
+          <p>拖拽 PDF 文件到拖拽区，或点击选择文件（支持批量导入多个 PDF）。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>配置转换选项</h4>
+          <p>
+            ☑️ <strong>保留排版格式</strong>：尽量保留原 PDF 的字体、间距、对齐方式（数字型 PDF 效果更好）<br>
+            ☑️ <strong>保留图片</strong>：将 PDF 中的图片嵌入到 Word 文档中<br>
+            下拉选择文档类型：普通 / 扫描版 / 自动识别
+          </p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>开始转换</h4>
+          <p>点击「开始转换」，进度条逐文件推进。大文件（100页以上）可能需要 1~2 分钟。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h4>获取结果</h4>
+          <p>转换完成后，结果 <code>.docx</code> 文件保存在输出目录，文件名与原 PDF 同名。</p>
+        </div>
+      </li>
+    </ul>
+
+    <div class="callout info">
+      <div class="callout-icon">💡</div>
+      <div class="callout-content">
+        <strong>扫描版 PDF 转换质量取决于图像清晰度</strong>
+        <p>扫描 OCR 的识别精度与原始 PDF 的图像分辨率成正比。建议扫描时使用 ≥300 DPI，黑白/灰度文档效果优于彩色。手写内容目前不支持 OCR 识别。</p>
+      </div>
+    </div>
+
+    <div class="callout warning">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-content">
+        <strong>扫描版 PDF 需额外安装 Tesseract OCR</strong>
+        <p>处理扫描版 PDF 需要本地安装 Tesseract OCR 引擎。安装地址：<a href="https://github.com/tesseract-ocr/tesseract" style="color:var(--primary-dark)">github.com/tesseract-ocr/tesseract</a>，需同时下载中文语言包 <code>chi_sim.traineddata</code>。数字型 PDF 无此要求。</p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===== 7. 屏幕录制 ===== -->
+  <section class="section" id="sec-record">
+    <h2><div class="h2-icon">🎬</div>屏幕录制</h2>
+
+    <h3>录制参数说明</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>参数</th><th>默认值</th><th>可选范围</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>帧率 (FPS)</td><td>15</td><td>5 / 10 / 15 / 20 / 25 / 30</td><td>越高画面越流畅，但文件越大、CPU 占用越高</td></tr>
+          <tr><td>编码器</td><td>libx264</td><td>libx264 / libx265</td><td>libx264 兼容性最好，libx265 文件更小但编码更慢</td></tr>
+          <tr><td>输出格式</td><td>MP4</td><td>MP4</td><td>当前版本固定输出 MP4（H.264）</td></tr>
+          <tr><td>录制区域</td><td>全屏</td><td>全屏 / 自定区域（规划中）</td><td>v1.0 仅支持全屏录制</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>录制前准备</h3>
+    <ul>
+      <li>确认 FFmpeg 已正确安装（参见「安装指南」第五步）</li>
+      <li>确认输出目录有足够磁盘空间（1080P 15fps 大约每分钟 30~80MB）</li>
+      <li>关闭其他高负载程序，避免录制帧率不稳定</li>
+    </ul>
+
+    <h3>操作步骤</h3>
+    <ul class="steps">
+      <li>
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>进入「屏幕录制」页面</h4>
+          <p>点击侧边栏屏幕录制入口。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>设置录制参数</h4>
+          <p>在控制台上方选择帧率和编码器；选择输出目录（默认桌面百宝箱输出）。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>开始录制</h4>
+          <p>点击红色「开始录制」按钮，计时器开始计时，按钮变为「暂停」和「停止」。此时切换到其他窗口，录制不会中断。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>暂停 / 继续</h4>
+          <p>点击「暂停」按钮暂停录制，计时器停止；点击「继续」恢复。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h4>停止录制</h4>
+          <p>点击「停止」按钮，程序等待 FFmpeg 完成最后帧的编码（约 1~3 秒），然后显示输出文件路径。文件命名格式：<code>录屏_YYYYMMDD_HHMMSS.mp4</code>。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <h4>查看录制文件</h4>
+          <p>点击「打开输出目录」，用默认播放器（如 Windows 媒体播放器）预览录制结果。</p>
+        </div>
+      </li>
+    </ul>
+
+    <div class="callout danger">
+      <div class="callout-icon">🔴</div>
+      <div class="callout-content">
+        <strong>直接关闭窗口会自动安全停止录制</strong>
+        <p>v1.0.1 已修复关窗口时录制未停止的问题。现在关闭主窗口时，程序会自动等待 FFmpeg 完成编码并安全退出，不会产生损坏的视频文件。</p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===== 8. 主题切换 ===== -->
+  <section class="section" id="sec-theme">
+    <h2><div class="h2-icon">🎨</div>主题切换</h2>
+
+    <p>百宝箱内置 5 套精心设计的主题色，所有 UI 元素会同步切换，告别单调界面。</p>
+
+    <div class="theme-chips">
+      <div class="theme-chip">
+        <div class="color-dot" style="background:#1877F2"></div>
+        海天蓝（默认）
+      </div>
+      <div class="theme-chip">
+        <div class="color-dot" style="background:#0D9488"></div>
+        青翠绿
+      </div>
+      <div class="theme-chip">
+        <div class="color-dot" style="background:#7C3AED"></div>
+        星空紫
+      </div>
+      <div class="theme-chip">
+        <div class="color-dot" style="background:#D97706"></div>
+        暖阳橙
+      </div>
+      <div class="theme-chip">
+        <div class="color-dot" style="background:#E11D48"></div>
+        玫瑰红
+      </div>
+    </div>
+
+    <h3>切换方式</h3>
+    <ul>
+      <li><strong>侧边栏快速切换</strong>：侧边导航栏底部有 5 个颜色圆点，单击即可切换，立即生效</li>
+      <li><strong>设置页切换</strong>：进入「系统设置 → 外观设置」，点击主题色卡片，再点「保存设置」</li>
+    </ul>
+
+    <div class="callout info">
+      <div class="callout-icon">💡</div>
+      <div class="callout-content">
+        <strong>主题偏好自动保存</strong>
+        <p>切换主题后下次打开程序会自动恢复上次选择，无需重复设置。配置保存在 <code>data/config.json</code> 文件中。</p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===== 9. 系统设置 ===== -->
+  <section class="section" id="sec-settings">
+    <h2><div class="h2-icon">🔧</div>系统设置</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>设置项</th><th>位置</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>默认输出目录</td><td>路径设置</td><td>所有功能的输出文件默认存放路径，留空则使用桌面「百宝箱输出」</td></tr>
+          <tr><td>FFmpeg 路径</td><td>录制设置</td><td>若 ffmpeg 未加入系统 PATH，可在此手动指定完整路径</td></tr>
+          <tr><td>主题色</td><td>外观设置</td><td>5 套主题色切换</td></tr>
+          <tr><td>默认压缩目标大小</td><td>压缩设置</td><td>「按大小」模式的默认目标 KB 值，默认 500</td></tr>
+          <tr><td>默认压缩质量</td><td>压缩设置</td><td>「按质量」模式的默认质量值，默认 75</td></tr>
+          <tr><td>录制帧率</td><td>录制设置</td><td>屏幕录制默认 FPS，默认 15</td></tr>
+          <tr><td>广告位启用</td><td>广告配置</td><td>开关：是否启用远程广告位拉取</td></tr>
+          <tr><td>广告 API 地址</td><td>广告配置</td><td>远程广告服务的 HTTP 接口地址</td></tr>
+          <tr><td>广告 API 密钥</td><td>广告配置</td><td>接口鉴权 Bearer Token</td></tr>
+          <tr><td>广告刷新间隔</td><td>广告配置</td><td>拉取新广告的间隔分钟数，默认 30 分钟</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout warning">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-content">
+        <strong>修改设置后记得点「保存设置」</strong>
+        <p>设置页面修改后不会自动生效，需要点击底部「保存设置」按钮。保存后主题立即切换，其他设置（路径、FFmpeg）在下次操作时生效。</p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===== 10. 开发环境搭建 ===== -->
+  <section class="section" id="sec-dev-env">
+    <h2><div class="h2-icon">🐍</div>开发环境搭建</h2>
+
+    <h3>推荐开发工具链</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>工具</th><th>推荐版本</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td>Python</td><td>3.13.x (64-bit)</td><td>主运行时</td></tr>
+          <tr><td>VS Code</td><td>最新版</td><td>代码编辑，推荐安装 Python + Pylance 插件</td></tr>
+          <tr><td>Git</td><td>≥ 2.40</td><td>版本管理</td></tr>
+          <tr><td>FFmpeg</td><td>6.x</td><td>录制编码测试</td></tr>
+          <tr><td>Qt Designer</td><td>随 PyQt6 安装</td><td>UI 布局辅助（可选）</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>完整开发环境搭建命令</h3>
+    <pre><span class="cmt"># 1. 克隆项目</span>
+<span class="kw">git</span> clone https://github.com/your-org/baibaoxiang.git
+<span class="kw">cd</span> baibaoxiang
+
+<span class="cmt"># 2. 创建虚拟环境</span>
+<span class="kw">python</span> <span class="op">-m</span> venv .venv
+<span class="var">.venv\Scripts\activate</span>
+
+<span class="cmt"># 3. 安装所有依赖（含开发工具）</span>
+<span class="kw">pip</span> install <span class="op">-r</span> requirements.txt
+
+<span class="cmt"># 4. 安装 pywin32 后处理脚本（必须执行一次）</span>
+<span class="kw">python</span> .venv\Scripts\pywin32_postinstall.py <span class="op">-install</span>
+
+<span class="cmt"># 5. 验证关键依赖</span>
+<span class="kw">python</span> <span class="op">-c</span> <span class="str">"from PyQt6.QtWidgets import QApplication; print('PyQt6 OK')"</span>
+<span class="kw">python</span> <span class="op">-c</span> <span class="str">"from PIL import Image; print('Pillow OK')"</span>
+<span class="kw">python</span> <span class="op">-c</span> <span class="str">"import fitz; print('PyMuPDF OK')"</span>
+<span class="kw">python</span> <span class="op">-c</span> <span class="str">"import pdf2docx; print('pdf2docx OK')"</span>
+<span class="kw">python</span> <span class="op">-c</span> <span class="str">"import win32gui; print('pywin32 OK')"</span>
+
+<span class="cmt"># 6. 运行应用</span>
+<span class="kw">python</span> main.py<span class="lang-tag">cmd</span></pre>
+
+    <div class="callout warning">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-content">
+        <strong>pywin32 安装后需执行 postinstall</strong>
+        <p>pywin32 安装后必须运行 <code>pywin32_postinstall.py -install</code> 才能正确注册 COM 组件，否则 win32gui 会报 ImportError。<b>这是 pywin32 的官方要求，每次创建新虚拟环境后都要执行一次。</b></p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===== 11. 项目结构 ===== -->
+  <section class="section" id="sec-structure">
+    <h2><div class="h2-icon">📂</div>项目结构</h2>
+
+    <div class="file-tree">
+<span class="dir">baibaoxiang/</span>                    <span class="comment"># 项目根目录</span>
+├── <span class="file">main.py</span>                         <span class="comment"># 应用入口，初始化 QApplication</span>
+├── <span class="file">requirements.txt</span>               <span class="comment"># Python 依赖声明</span>
+├── <span class="file">build.py</span>                        <span class="comment"># PyInstaller 打包脚本</span>
+├── <span class="file">PROJECT.md</span>                      <span class="comment"># 项目说明文档</span>
+│
+├── <span class="dir">src/</span>                            <span class="comment"># 全部源代码</span>
+│   ├── <span class="file">config.py</span>                   <span class="comment"># 全局配置管理（JSON 持久化，单例）</span>
+│   ├── <span class="file">database.py</span>                 <span class="comment"># SQLite 数据访问层（历史记录+广告缓存）</span>
+│   ├── <span class="file">signals.py</span>                  <span class="comment"># Qt 全局信号总线（单例）</span>
+│   ├── <span class="file">worker_threads.py</span>           <span class="comment"># 后台线程：压缩/转换/录制</span>
+│   ├── <span class="file">main_window.py</span>              <span class="comment"># 主窗口（侧边栏+页面堆栈+主题加载）</span>
+│   │
+│   ├── <span class="dir">modules/</span>                    <span class="comment"># 核心功能模块（纯 Python，不含 Qt）</span>
+│   │   ├── <span class="file">image_compressor.py</span>     <span class="comment"># Pillow 压缩，二分搜索算法</span>
+│   │   ├── <span class="file">pdf_converter.py</span>        <span class="comment"># pdf2docx 转换器</span>
+│   │   ├── <span class="file">screen_recorder.py</span>      <span class="comment"># pywin32 GDI + FFmpeg 管道录制</span>
+│   │   └── <span class="file">ad_manager.py</span>           <span class="comment"># 远程广告拉取+缓存</span>
+│   │
+│   ├── <span class="dir">pages/</span>                      <span class="comment"># UI 页面（QWidget 子类）</span>
+│   │   ├── <span class="file">home_page.py</span>            <span class="comment"># 首页：统计+快捷入口+历史记录</span>
+│   │   ├── <span class="file">compress_page.py</span>        <span class="comment"># 图片压缩页面</span>
+│   │   ├── <span class="file">pdf_word_page.py</span>        <span class="comment"># PDF 转 Word 页面</span>
+│   │   ├── <span class="file">recorder_page.py</span>        <span class="comment"># 屏幕录制页面</span>
+│   │   ├── <span class="file">guide_page.py</span>           <span class="comment"># 使用指南三标签页</span>
+│   │   └── <span class="file">settings_page.py</span>        <span class="comment"># 系统设置页面</span>
+│   │
+│   └── <span class="dir">theme/</span>                      <span class="comment"># 主题样式表</span>
+│       ├── <span class="file">blue.qss</span>                <span class="comment"># 海天蓝（默认）</span>
+│       ├── <span class="file">teal.qss</span>                <span class="comment"># 青翠绿</span>
+│       ├── <span class="file">purple.qss</span>              <span class="comment"># 星空紫</span>
+│       ├── <span class="file">amber.qss</span>               <span class="comment"># 暖阳橙</span>
+│       └── <span class="file">rose.qss</span>                <span class="comment"># 玫瑰红</span>
+│
+├── <span class="dir">data/</span>                           <span class="comment"># 运行时数据（自动生成，勿手动删除）</span>
+│   ├── <span class="file">baibaobox.db</span>                <span class="comment"># SQLite 数据库（历史记录）</span>
+│   ├── <span class="file">config.json</span>                 <span class="comment"># 用户配置文件</span>
+│   ├── <span class="dir">logs/</span>                       <span class="comment"># 运行日志</span>
+│   └── <span class="dir">cache/</span>                      <span class="comment"># 广告素材缓存</span>
+│
+├── <span class="dir">docs/</span>                           <span class="comment"># 文档</span>
+│   ├── <span class="file">user-manual.html</span>            <span class="comment"># 本使用说明书</span>
+│   ├── <span class="file">tech-spec.html</span>              <span class="comment"># 技术方案文档</span>
+│   └── <span class="file">bug-report.html</span>             <span class="comment"># Bug 报告（历史归档）</span>
+│
+├── <span class="dir">prototype/</span>                      <span class="comment"># 产品原型</span>
+│   └── <span class="file">index.html</span>                  <span class="comment"># 交互式 HTML 原型</span>
+│
+└── <span class="dir">build/</span>                          <span class="comment"># 打包输出目录（自动生成）</span>
+    </div>
+
+    <h3>架构设计原则</h3>
+    <ul>
+      <li><strong>前后端分离</strong>：<code>modules/</code> 中的功能模块不依赖任何 Qt 类，可独立测试</li>
+      <li><strong>信号总线解耦</strong>：页面与模块之间全部通过 <code>SignalBus</code> 通信，避免直接依赖</li>
+      <li><strong>配置单例</strong>：全局只有一个 <code>AppConfig</code> 实例，所有页面共享，保证一致性</li>
+      <li><strong>后台线程</strong>：所有耗时操作（压缩/转换/录制）均在 <code>QThread</code> 中执行，UI 不卡顿</li>
+    </ul>
+  </section>
+
+
+  <!-- ===== 12. 打包发布 ===== -->
+  <section class="section" id="sec-build">
+    <h2><div class="h2-icon">📦</div>打包发布</h2>
+
+    <h3>打包为 .exe 安装包（完整流程）</h3>
+
+    <div class="callout info">
+      <div class="callout-icon">💡</div>
+      <div class="callout-content">
+        <strong>打包前准备</strong>
+        <p>确保 PyInstaller 已安装（<code>pip install pyinstaller</code>），且当前系统上所有功能均可正常运行。打包需要在 <b>Windows 系统</b>上进行，macOS/Linux 无法交叉编译 Windows 应用。</p>
+      </div>
+    </div>
+
+    <h4>方式一：一键打包脚本（推荐）</h4>
+    <pre><span class="cmt"># 激活虚拟环境</span>
+<span class="var">.venv\Scripts\activate</span>
+
+<span class="cmt"># 运行打包脚本（自动处理所有参数）</span>
+<span class="kw">python</span> build.py<span class="lang-tag">cmd</span></pre>
+
+    <p>打包完成后，可执行文件位于 <code>dist/BaibaoBOX.exe</code>，运行时大约 80~120MB。</p>
+
+    <h4>方式二：手动 PyInstaller 命令</h4>
+    <pre><span class="kw">pyinstaller</span> <span class="op">--onefile</span> <span class="op">--windowed</span> \
+  <span class="op">--name</span>=<span class="str">BaibaoBOX</span> \
+  <span class="op">--add-data</span> <span class="str">"src/theme;src/theme"</span> \
+  <span class="op">--add-data</span> <span class="str">"src/resources;src/resources"</span> \
+  <span class="op">--hidden-import</span>=<span class="str">PyQt6.sip</span> \
+  <span class="op">--hidden-import</span>=<span class="str">win32api</span> \
+  <span class="op">--hidden-import</span>=<span class="str">win32gui</span> \
+  <span class="op">--hidden-import</span>=<span class="str">win32con</span> \
+  main.py<span class="lang-tag">cmd</span></pre>
+
+    <h4>制作 Windows 安装包（Inno Setup）</h4>
+    <p>下载并安装 <a href="https://jrsoftware.org/isinfo.php" style="color:var(--primary)">Inno Setup 6</a>，使用以下脚本模板生成 <code>BaibaoBOX-v1.0.1-Setup.exe</code>：</p>
+    <pre><span class="cmt">; BaibaoBOX Inno Setup Script</span>
+[<span class="kw">Setup</span>]
+<span class="var">AppName</span>=<span class="str">百宝箱</span>
+<span class="var">AppVersion</span>=<span class="str">1.0.1</span>
+<span class="var">AppPublisher</span>=<span class="str">BaibaoBOX Team</span>
+<span class="var">DefaultDirName</span>=<span class="str">{pf}\BaibaoBOX</span>
+<span class="var">DefaultGroupName</span>=<span class="str">百宝箱</span>
+<span class="var">OutputBaseFilename</span>=<span class="str">BaibaoBOX-v1.0.1-Setup</span>
+<span class="var">Compression</span>=<span class="str">lzma</span>
+
+[<span class="kw">Files</span>]
+<span class="var">Source</span>: <span class="str">"dist\BaibaoBOX.exe"</span>; <span class="var">DestDir</span>: <span class="str">"{app}"</span>
+
+[<span class="kw">Icons</span>]
+<span class="var">Name</span>: <span class="str">"{commondesktop}\百宝箱"</span>; <span class="var">Filename</span>: <span class="str">"{app}\BaibaoBOX.exe"</span><span class="lang-tag">iss</span></pre>
+  </section>
+
+
+  <!-- ===== 13. 广告位配置 ===== -->
+  <section class="section" id="sec-ad">
+    <h2><div class="h2-icon">📢</div>广告位配置</h2>
+
+    <p>百宝箱在每个功能页面顶部预留了广告横幅位，通过远程 API 拉取广告素材，完全解耦于核心功能，失败静默降级（不显示广告但不影响任何功能）。</p>
+
+    <h3>广告位设计原则</h3>
+    <ul>
+      <li>独立线程拉取，不阻塞 UI 线程</li>
+      <li>本地 SQLite 缓存最近一次广告，即使 API 不可达仍可展示缓存内容</li>
+      <li>网络故障时静默失败，用户不感知错误</li>
+      <li>可随时在设置页开关广告功能</li>
+    </ul>
+
+    <h3>广告 API 接口规范</h3>
+    <p>广告服务端需实现以下 HTTP 接口：</p>
+    <pre><span class="kw">GET</span> <span class="str">/api/ads</span>
+<span class="var">Authorization</span>: <span class="str">Bearer &lt;your_api_key&gt;</span>
+<span class="var">Content-Type</span>: <span class="str">application/json</span>
+
+<span class="cmt">// 期望响应格式：</span>
+{
+  <span class="str">"ads"</span>: [
+    {
+      <span class="str">"title"</span>:     <span class="str">"广告标题文字"</span>,
+      <span class="str">"image_url"</span>: <span class="str">"https://cdn.example.com/ad.png"</span>,
+      <span class="str">"link_url"</span>:  <span class="str">"https://www.example.com/landing"</span>
+    }
+  ]
+}<span class="lang-tag">JSON</span></pre>
+
+    <h3>配置步骤</h3>
+    <ul class="steps">
+      <li>
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>搭建广告 API 服务</h4>
+          <p>按以上接口规范实现服务端（可使用 Flask、FastAPI、Node.js 等任意框架）。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>在设置页填写配置</h4>
+          <p>打开百宝箱 → 系统设置 → 广告配置；填写 API 地址、密钥，设置刷新间隔（分钟），开启「启用广告位」开关。</p>
+        </div>
+      </li>
+      <li>
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>保存并验证</h4>
+          <p>点击「保存设置」，重启应用后广告位将在功能页顶部展示。</p>
+        </div>
+      </li>
+    </ul>
+  </section>
+
+
+  <!-- ===== 14. 常见问题 ===== -->
+  <section class="section" id="sec-faq">
+    <h2><div class="h2-icon">❓</div>常见问题 (FAQ)</h2>
+
+    <div class="faq-item">
+      <div class="faq-q">安装完依赖后运行 main.py，提示 ModuleNotFoundError: No module named 'PyQt6'</div>
+      <div class="faq-a">
+        通常是虚拟环境未激活。请先运行 <code>.venv\Scripts\activate</code>（命令行前缀显示 <code>(.venv)</code>），再重新运行 <code>python main.py</code>。若激活后仍报错，执行 <code>pip install PyQt6</code> 重新安装。
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">点击「开始录制」后提示「未找到 FFmpeg，请先安装」</div>
+      <div class="faq-a">
+        FFmpeg 未安装或未加入系统 PATH。解决方案：<br>
+        ① 运行 <code>winget install Gyan.FFmpeg</code>（需重启终端使 PATH 生效）；<br>
+        ② 或手动安装后，在百宝箱「设置 → 录制设置 → FFmpeg 路径」中填写完整路径，如 <code>C:\ffmpeg\bin\ffmpeg.exe</code>。
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">图片压缩后大小比目标值大/小很多，不准确</div>
+      <div class="faq-a">
+        「按大小」模式使用二分搜索算法，设计精度为目标值 ±20KB。对于非常小的图片（原始文件小于目标值），程序会提示"无需压缩"。对于 PNG 格式，建议选择「按大小」模式，程序会自动转为 JPEG 实现显著压缩。
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">PDF 转 Word 后文字乱码或版式错乱</div>
+      <div class="faq-a">
+        版式错乱是 PDF 转 Word 的固有局限性（PDF 是固定排版格式，Word 是流式排版）。建议：<br>
+        ① 确认 PDF 是数字型（可选中文字），如果是扫描版请选择对应选项；<br>
+        ② 对于复杂排版（多栏、表格嵌套），转换后可能需要手动调整；<br>
+        ③ 简单文字类文档转换效果最佳。
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">扫描版 PDF 转换时提示「Tesseract 未找到」</div>
+      <div class="faq-a">
+        扫描版 PDF 需要 Tesseract OCR。安装步骤：<br>
+        ① 下载 <a href="https://github.com/UB-Mannheim/tesseract/wiki" style="color:var(--primary)">Tesseract Windows 安装包</a>；<br>
+        ② 安装时勾选中文语言包（Chinese Simplified）；<br>
+        ③ 将 Tesseract 安装目录加入系统 PATH；<br>
+        ④ 运行 <code>tesseract --version</code> 验证。
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">录制视频播放时卡顿/帧率低</div>
+      <div class="faq-a">
+        录制帧率低通常是因为 CPU 负载过高。建议：<br>
+        ① 关闭不必要的后台程序；<br>
+        ② 将帧率从 25 降至 15 FPS；<br>
+        ③ 使用 libx264 而不是 libx265（libx265 编码更耗 CPU）；<br>
+        ④ 确保 Python 版本为 3.11+ 且使用 64 位版本。
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">pywin32 安装后提示 ImportError: DLL load failed</div>
+      <div class="faq-a">
+        pywin32 安装后需要运行后处理脚本注册 DLL。执行：<br>
+        <code>python .venv\Scripts\pywin32_postinstall.py -install</code><br>
+        若提示权限不足，请以管理员身份运行命令提示符，再重新执行。
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">主题切换后部分组件颜色没有更新</div>
+      <div class="faq-a">
+        v1.0.1 已修复主题不同步问题。若仍出现，尝试：关闭当前页面并重新切换到该页面，或重启应用。如果是自定义组件，可能需要手动调用 <code>style().polish(widget)</code>。
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">data/config.json 误删后如何恢复默认设置</div>
+      <div class="faq-a">
+        直接重启应用即可。程序检测到配置文件不存在时会自动创建默认配置，所有参数恢复为出厂默认值（蓝色主题、500KB 压缩目标、15FPS 录制等）。历史记录数据库（baibaobox.db）不受影响。
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-q">我的文件会被上传到网络吗？</div>
+      <div class="faq-a">
+        <strong>不会。</strong>百宝箱所有核心功能（图片压缩、PDF转换、屏幕录制）全部在本地执行，不向任何服务器发送您的文件内容。广告位功能（如启用）仅从服务器拉取广告素材（图片URL和链接），不涉及您的任何文件或操作数据。
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===== 15. 版本历史 ===== -->
+  <section class="section" id="sec-changelog">
+    <h2><div class="h2-icon">📝</div>版本历史</h2>
+
+    <div style="border-left: 3px solid var(--primary); padding-left: 20px; margin-bottom: 24px;">
+      <h3 style="margin-top:0; color:var(--primary)">v1.0.1 — 2026-06-26（当前版本）</h3>
+      <p style="color:var(--text-muted); font-size:13px; margin-bottom:10px">Bug 修复版本，修复 16 个已知问题</p>
+      <ul>
+        <li>🔴 <strong>[Blocker]</strong> 修复屏幕录制 BGRA 逐像素转换性能问题（帧率 3-5 FPS → 15+ FPS，提升约 5 倍）</li>
+        <li>🔴 <strong>[Blocker]</strong> 修复 QThread.terminate() 危险用法，改为协作式取消（防止崩溃/死锁）</li>
+        <li>🔴 <strong>[Blocker]</strong> 修复关闭窗口时录制线程未停止问题（不再产生 FFmpeg 孤儿进程）</li>
+        <li>🔴 <strong>[Blocker]</strong> 修复 PDF 转换选项参数未实际传入问题（"保留图片"选项现在真正生效）</li>
+        <li>🟡 <strong>[Major]</strong> 修复 SignalBus 单例二次初始化风险</li>
+        <li>🟡 <strong>[Major]</strong> 修复多页面配置不同步问题（统一全局配置单例）</li>
+        <li>🟡 <strong>[Major]</strong> 修复首页统计面板孤儿 QLabel 问题</li>
+        <li>🟡 <strong>[Major]</strong> 修复首页快捷卡片点击无导航跳转问题</li>
+        <li>🟡 <strong>[Major]</strong> 修复录制停止延迟问题（帧写入独立线程+队列解耦）</li>
+        <li>🔵 <strong>[Minor]</strong> 数据库操作改用 context manager，自动管理连接生命周期</li>
+        <li>🔵 <strong>[Minor]</strong> 修复拖拽离开后下载区样式未恢复问题</li>
+        <li>🔵 <strong>[Minor]</strong> 打包输出文件名改为 BaibaoBOX（避免中文路径问题）</li>
+        <li>🔵 <strong>[Minor]</strong> 图片压缩模块添加 PNG 格式无损说明</li>
+        <li>💭 删除僵尸代码 AdFetcher 类（功能已由 AdManager 负责）</li>
+        <li>💭 删除 screen_recorder.py 中未使用的 struct/tempfile import</li>
+        <li>💭 image_compressor.py 添加防御性字典拷贝</li>
+      </ul>
+    </div>
+
+    <div style="border-left: 3px solid var(--border); padding-left: 20px; margin-bottom: 24px;">
+      <h3 style="margin-top:0; color:var(--text-muted)">v1.0.0 — 2026-06-25（初始版本）</h3>
+      <p style="color:var(--text-muted); font-size:13px; margin-bottom:10px">首次发布</p>
+      <ul>
+        <li>✅ 图片批量压缩功能（按大小/质量两种模式）</li>
+        <li>✅ PDF 转 Word 功能（数字型 + 扫描型）</li>
+        <li>✅ 屏幕录制功能（pywin32 GDI + FFmpeg 编码）</li>
+        <li>✅ 5 套主题色（蓝/青绿/紫/琥珀/玫瑰红）</li>
+        <li>✅ 广告位预留（远程 API + 本地缓存）</li>
+        <li>✅ 操作历史记录（SQLite）</li>
+        <li>✅ 系统设置（路径、FFmpeg、广告配置）</li>
+      </ul>
+    </div>
+
+    <hr>
+
+    <div style="text-align:center; padding:24px; color:var(--text-muted); font-size:13px;">
+      <p>🧰 <strong>百宝箱 v1.0.1</strong> — Windows 本地工具集</p>
+      <p style="margin-top:6px">所有功能本地运行 · 数据不上传 · 安全可靠</p>
+    </div>
+  </section>
+
+</main>
+
+<!-- 返回顶部按钮 -->
+<button id="back-top" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+<script>
+  // 滚动进度条
+  const bar = document.getElementById('progress-bar');
+  const backTop = document.getElementById('back-top');
+
+  window.addEventListener('scroll', () => {
+    const scrolled = window.scrollY;
+    const total = document.body.scrollHeight - window.innerHeight;
+    const progress = scrolled / total;
+    bar.style.transform = `scaleX(${progress})`;
+    backTop.classList.toggle('show', scrolled > 300);
+
+    // 高亮当前导航
+    const sections = document.querySelectorAll('.section[id]');
+    const links = document.querySelectorAll('.nav-link');
+    let current = '';
+    sections.forEach(s => {
+      if (scrolled >= s.offsetTop - 80) current = s.id;
+    });
+    links.forEach(l => {
+      l.classList.toggle('active', l.getAttribute('href') === '#' + current);
+    });
+  });
+
+  // 平滑滚动
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const target = document.querySelector(a.getAttribute('href'));
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+</script>
+</body>
+</html>

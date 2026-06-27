@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>百宝箱 BaibaoBOX - 产品原型</title>
+<style>
+  :root {
+    --primary: #1877F2;
+    --primary-light: #E8F1FF;
+    --primary-dark: #0C5BC4;
+    --sidebar-bg: #0D2B5E;
+    --sidebar-text: #B8CDEF;
+    --sidebar-active: #1877F2;
+    --bg: #F0F4FA;
+    --surface: #FFFFFF;
+    --border: #D9E4F0;
+    --text-main: #1a2640;
+    --text-sub: #5A6B85;
+    --text-hint: #8FA0BB;
+    --success: #1a9e6e;
+    --warning: #d97706;
+    --danger: #dc2626;
+    --ad-bg: #FFFBEA;
+    --ad-border: #FCD34D;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: var(--bg); color: var(--text-main); font-size: 13px; display: flex; height: 100vh; overflow: hidden; }
+
+  /* ===== SIDEBAR ===== */
+  .sidebar {
+    width: 220px; min-width: 220px; background: var(--sidebar-bg);
+    display: flex; flex-direction: column; height: 100vh; overflow-y: auto;
+  }
+  .logo-area {
+    padding: 20px 16px 16px; border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .logo-box { display: flex; align-items: center; gap: 10px; }
+  .logo-icon {
+    width: 36px; height: 36px; background: var(--primary);
+    border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: white; font-weight: 500;
+  }
+  .logo-text { font-size: 16px; font-weight: 500; color: #FFFFFF; }
+  .logo-sub { font-size: 11px; color: var(--sidebar-text); margin-top: 1px; }
+
+  .nav-section { padding: 16px 8px 8px; }
+  .nav-label { font-size: 11px; color: rgba(184,205,239,0.5); padding: 0 8px 6px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+    border-radius: 8px; cursor: pointer; color: var(--sidebar-text);
+    transition: background 0.15s; font-size: 13px; position: relative;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.08); color: white; }
+  .nav-item.active { background: var(--primary); color: white; }
+  .nav-icon { width: 20px; text-align: center; font-size: 15px; }
+  .nav-badge {
+    margin-left: auto; background: var(--primary); color: white;
+    font-size: 10px; padding: 1px 5px; border-radius: 10px;
+  }
+  .nav-item.active .nav-badge { background: rgba(255,255,255,0.25); }
+
+  .sidebar-bottom { margin-top: auto; padding: 12px 8px 16px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .theme-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; color: var(--sidebar-text); font-size: 12px; }
+  .theme-dots { display: flex; gap: 5px; margin-left: auto; }
+  .theme-dot {
+    width: 14px; height: 14px; border-radius: 50%; cursor: pointer;
+    border: 2px solid transparent; transition: border-color 0.15s;
+  }
+  .theme-dot.selected { border-color: white; }
+  .version-tag { font-size: 11px; color: rgba(184,205,239,0.4); padding: 0 10px; }
+
+  /* ===== MAIN ===== */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  .topbar {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 0 24px; height: 52px; display: flex; align-items: center; gap: 16px;
+  }
+  .topbar-title { font-size: 15px; font-weight: 500; flex: 1; }
+  .topbar-btn {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: white; color: var(--text-sub); cursor: pointer; font-size: 12px;
+    transition: background 0.15s;
+  }
+  .topbar-btn:hover { background: var(--bg); }
+  .topbar-btn.primary { background: var(--primary); color: white; border-color: var(--primary); }
+  .topbar-btn.primary:hover { background: var(--primary-dark); }
+
+  .content { flex: 1; overflow-y: auto; padding: 24px; }
+
+  /* ===== PAGES ===== */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ===== AD BANNER ===== */
+  .ad-banner {
+    background: var(--ad-bg); border: 1px dashed var(--ad-border);
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .ad-tag { font-size: 10px; background: #FCD34D; color: #7c5c00; padding: 2px 6px; border-radius: 4px; font-weight: 500; white-space: nowrap; }
+  .ad-text { font-size: 12px; color: var(--text-sub); flex: 1; }
+  .ad-close { font-size: 16px; color: var(--text-hint); cursor: pointer; }
+
+  /* ===== CARDS ===== */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px; margin-bottom: 16px;
+  }
+  .card-title { font-size: 14px; font-weight: 500; color: var(--text-main); margin-bottom: 4px; }
+  .card-sub { font-size: 12px; color: var(--text-sub); margin-bottom: 16px; }
+
+  /* ===== STAT CARDS ===== */
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+  .stat-label { font-size: 12px; color: var(--text-sub); margin-bottom: 8px; }
+  .stat-value { font-size: 24px; font-weight: 500; color: var(--text-main); }
+  .stat-unit { font-size: 13px; color: var(--text-sub); margin-left: 3px; }
+  .stat-trend { font-size: 11px; color: var(--success); margin-top: 4px; }
+
+  /* ===== FEATURE CARDS (HOME) ===== */
+  .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+  .feature-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .feature-card:hover { border-color: var(--primary); }
+  .feature-icon {
+    width: 44px; height: 44px; border-radius: 10px; background: var(--primary-light);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; margin-bottom: 12px; color: var(--primary);
+  }
+  .feature-name { font-size: 14px; font-weight: 500; margin-bottom: 5px; }
+  .feature-desc { font-size: 12px; color: var(--text-sub); line-height: 1.6; }
+  .feature-btn {
+    margin-top: 14px; display: inline-block; padding: 6px 14px;
+    background: var(--primary-light); color: var(--primary); border-radius: 6px;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+  }
+
+  /* ===== UPLOAD ZONE ===== */
+  .upload-zone {
+    border: 1.5px dashed var(--border); border-radius: 10px;
+    padding: 32px; text-align: center; cursor: pointer;
+    transition: border-color 0.15s, background 0.15s; margin-bottom: 16px;
+  }
+  .upload-zone:hover { border-color: var(--primary); background: var(--primary-light); }
+  .upload-icon { font-size: 32px; margin-bottom: 8px; color: var(--text-hint); }
+  .upload-text { font-size: 13px; color: var(--text-sub); }
+  .upload-hint { font-size: 12px; color: var(--text-hint); margin-top: 4px; }
+
+  /* ===== SETTINGS ROW ===== */
+  .settings-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .settings-label { font-size: 13px; color: var(--text-main); width: 100px; }
+  .settings-control { flex: 1; }
+  input[type=range] { width: 100%; accent-color: var(--primary); }
+  select, input[type=number] {
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;
+    font-size: 12px; color: var(--text-main); background: white;
+  }
+  .value-badge {
+    min-width: 44px; text-align: center; padding: 4px 8px;
+    background: var(--primary-light); color: var(--primary);
+    border-radius: 6px; font-size: 12px; font-weight: 500;
+  }
+
+  /* ===== FILE LIST ===== */
+  .file-list { margin-top: 12px; }
+  .file-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 8px; background: var(--surface);
+  }
+  .file-icon { font-size: 18px; }
+  .file-info { flex: 1; }
+  .file-name { font-size: 13px; font-weight: 500; }
+  .file-size { font-size: 11px; color: var(--text-hint); margin-top: 1px; }
+  .file-status { font-size: 12px; }
+  .status-wait { color: var(--text-hint); }
+  .status-done { color: var(--success); }
+  .status-proc { color: var(--primary); }
+
+  /* ===== PROGRESS ===== */
+  .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  .progress-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.4s; }
+
+  /* ===== RECORD CONTROLS ===== */
+  .record-area { text-align: center; padding: 24px 0; }
+  .record-btn {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: var(--danger); border: none; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 28px; color: white; margin-bottom: 16px; transition: transform 0.1s;
+  }
+  .record-btn:hover { transform: scale(1.05); }
+  .record-btn.recording { background: #7f1d1d; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
+  .record-timer { font-size: 28px; font-weight: 500; color: var(--text-main); }
+  .record-hint { font-size: 12px; color: var(--text-hint); margin-top: 8px; }
+  .record-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .record-setting-card { background: var(--bg); border-radius: 8px; padding: 12px 14px; }
+  .record-setting-label { font-size: 11px; color: var(--text-hint); margin-bottom: 4px; }
+  .record-setting-value { font-size: 13px; color: var(--text-main); }
+
+  /* ===== GUIDE ===== */
+  .guide-tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--bg); padding: 4px; border-radius: 8px; }
+  .guide-tab {
+    flex: 1; text-align: center; padding: 8px; border-radius: 6px;
+    cursor: pointer; font-size: 12px; color: var(--text-sub); transition: background 0.15s;
+  }
+  .guide-tab.active { background: var(--surface); color: var(--primary); font-weight: 500; }
+  .guide-step { display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .guide-step:last-child { border-bottom: none; }
+  .step-num {
+    width: 26px; height: 26px; min-width: 26px; border-radius: 50%;
+    background: var(--primary); color: white; display: flex;
+    align-items: center; justify-content: center; font-size: 12px; font-weight: 500;
+  }
+  .step-content { flex: 1; }
+  .step-title { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+  .step-desc { font-size: 12px; color: var(--text-sub); line-height: 1.6; }
+  .step-code {
+    margin-top: 8px; background: var(--bg); border-radius: 6px;
+    padding: 8px 12px; font-family: monospace; font-size: 12px; color: var(--text-main);
+  }
+  .info-box {
+    padding: 12px 14px; border-radius: 8px; font-size: 12px; line-height: 1.6; margin-bottom: 12px;
+  }
+  .info-box.tip { background: var(--primary-light); color: var(--primary-dark); border-left: 3px solid var(--primary); }
+  .info-box.warn { background: #FEF9EE; color: #78350f; border-left: 3px solid var(--warning); }
+
+  /* ===== SETTINGS PAGE ===== */
+  .settings-section { margin-bottom: 24px; }
+  .settings-section-title { font-size: 13px; font-weight: 500; color: var(--text-main); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .settings-item { display: flex; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .settings-item:last-child { border-bottom: none; }
+  .settings-item-info { flex: 1; }
+  .settings-item-label { font-size: 13px; }
+  .settings-item-sub { font-size: 11px; color: var(--text-hint); margin-top: 2px; }
+  .toggle-switch {
+    width: 36px; height: 20px; background: var(--border); border-radius: 10px;
+    cursor: pointer; position: relative; transition: background 0.2s;
+  }
+  .toggle-switch.on { background: var(--primary); }
+  .toggle-knob {
+    position: absolute; top: 3px; left: 3px; width: 14px; height: 14px;
+    border-radius: 50%; background: white; transition: left 0.2s;
+  }
+  .toggle-switch.on .toggle-knob { left: 19px; }
+
+  /* ===== AD SECTION SETTINGS ===== */
+  .ad-config-box {
+    border: 1px dashed var(--ad-border); border-radius: 8px;
+    padding: 16px; background: var(--ad-bg);
+  }
+  .ad-config-title { font-size: 13px; font-weight: 500; color: #78350f; margin-bottom: 8px; }
+  .ad-field { margin-bottom: 8px; }
+  .ad-field label { font-size: 11px; color: var(--text-hint); display: block; margin-bottom: 3px; }
+  .ad-field input { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 12px; }
+
+  /* RESPONSIVE */
+  @media (max-width: 900px) {
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    .feature-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* THEME CLASSES */
+  .theme-teal { --primary: #0F9E75; --primary-light: #E1F5EE; --primary-dark: #0a6e52; --sidebar-bg: #0a3d2e; }
+  .theme-purple { --primary: #7F77DD; --primary-light: #EEEDFE; --primary-dark: #534AB7; --sidebar-bg: #2D2B5B; }
+  .theme-amber { --primary: #BA7517; --primary-light: #FAEEDA; --primary-dark: #854F0B; --sidebar-bg: #3a2a0a; }
+  .theme-coral { --primary: #D85A30; --primary-light: #FAECE7; --primary-dark: #993C1D; --sidebar-bg: #3d180c; }
+
+  /* tooltip */
+  .tooltip { position: relative; }
+  .tooltip::after { content: attr(data-tip); position: absolute; bottom: 120%; left: 50%; transform: translateX(-50%); background: #222; color: white; font-size: 11px; padding: 4px 8px; border-radius: 4px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.15s; z-index: 99; }
+  .tooltip:hover::after { opacity: 1; }
+</style>
+</head>
+<body id="app">
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar">
+  <div class="logo-area">
+    <div class="logo-box">
+      <div class="logo-icon">宝</div>
+      <div>
+        <div class="logo-text">百宝箱</div>
+        <div class="logo-sub">BaibaoBOX v1.0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">主导航</div>
+    <div class="nav-item active" onclick="showPage('home')">
+      <span class="nav-icon">⊞</span> 首页总览
+    </div>
+    <div class="nav-item" onclick="showPage('img')">
+      <span class="nav-icon">🖼</span> 图片压缩
+      <span class="nav-badge">新</span>
+    </div>
+    <div class="nav-item" onclick="showPage('pdf')">
+      <span class="nav-icon">📄</span> PDF 转 Word
+    </div>
+    <div class="nav-item" onclick="showPage('record')">
+      <span class="nav-icon">⏺</span> 屏幕录制
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">系统</div>
+    <div class="nav-item" onclick="showPage('guide')">
+      <span class="nav-icon">📖</span> 使用指南
+    </div>
+    <div class="nav-item" onclick="showPage('settings')">
+      <span class="nav-icon">⚙</span> 系统设置
+    </div>
+  </div>
+
+  <div class="sidebar-bottom">
+    <div class="theme-row">
+      <span>主题色</span>
+      <div class="theme-dots">
+        <div class="theme-dot selected" style="background:#1877F2" onclick="setTheme('')" data-theme="" title="蓝色"></div>
+        <div class="theme-dot" style="background:#0F9E75" onclick="setTheme('teal')" data-theme="teal" title="青绿"></div>
+        <div class="theme-dot" style="background:#7F77DD" onclick="setTheme('purple')" data-theme="purple" title="紫色"></div>
+        <div class="theme-dot" style="background:#BA7517" onclick="setTheme('amber')" data-theme="amber" title="琥珀"></div>
+        <div class="theme-dot" style="background:#D85A30" onclick="setTheme('coral')" data-theme="coral" title="橙红"></div>
+      </div>
+    </div>
+    <div class="version-tag">仅本地运行 · 数据不上传</div>
+  </div>
+</aside>
+
+<!-- ===== MAIN CONTENT ===== -->
+<div class="main">
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="topbar-title" id="pageTitle">首页总览</div>
+    <button class="topbar-btn" onclick="showPage('guide')">📖 使用指南</button>
+    <button class="topbar-btn primary" id="topAction" onclick="handleTopAction()">开始使用</button>
+  </div>
+
+  <div class="content">
+
+    <!-- ============ HOME PAGE ============ -->
+    <div class="page active" id="page-home">
+      <div class="ad-banner">
+        <span class="ad-tag">广告位</span>
+        <span class="ad-text">此处为预留广告位，可通过远程数据库动态下发广告内容，支持图文/文字/链接形式展示。</span>
+        <span class="ad-close" onclick="this.parentElement.style.display='none'">×</span>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-label">已压缩图片</div>
+          <div class="stat-value">128<span class="stat-unit">张</span></div>
+          <div class="stat-trend">↑ 节省 46.3 MB</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">PDF 已转换</div>
+          <div class="stat-value">17<span class="stat-unit">份</span></div>
+          <div class="stat-trend">↑ 本月 5 份</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">录屏文件</div>
+          <div class="stat-value">9<span class="stat-unit">个</span></div>
+          <div class="stat-trend">总计 2.1 GB</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">今日操作</div>
+          <div class="stat-value">6<span class="stat-unit">次</span></div>
+          <div class="stat-trend">最近：12 分钟前</div>
+        </div>
+      </div>
+
+      <div class="feature-grid">
+        <div class="feature-card" onclick="showPage('img')">
+          <div class="feature-icon">🖼</div>
+          <div class="feature-name">图片批量压缩</div>
+          <div class="feature-desc">支持 JPG、PNG、WebP 格式，按目标大小或质量压缩，可批量处理，满足政府网站上传要求。</div>
+          <div class="feature-btn">立即使用 →</div>
+        </div>
+        <div class="feature-card" onclick="showPage('pdf')">
+          <div class="feature-icon">📄</div>
+          <div class="feature-name">PDF 转 Word</div>
+          <div class="feature-desc">将 PDF 文件转换为可编辑的 Word 文档，支持文字、表格、排版识别，全程本地处理。</div>
+          <div class="feature-btn">立即使用 →</div>
+        </div>
+        <div class="feature-card" onclick="showPage('record')">
+          <div class="feature-icon">⏺</div>
+          <div class="feature-name">屏幕录制</div>
+          <div class="feature-desc">录制全屏或指定区域，支持麦克风收音，导出为 MP4 格式，调用 Windows 系统原生能力。</div>
+          <div class="feature-btn">立即使用 →</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">最近操作记录</div>
+        <div class="card-sub">最近 5 条操作历史</div>
+        <div class="file-list">
+          <div class="file-item">
+            <span class="file-icon">🖼</span>
+            <div class="file-info">
+              <div class="file-name">批量压缩 · 12张图片</div>
+              <div class="file-size">2026-06-25 22:10 · 节省 8.4 MB</div>
+            </div>
+            <span class="file-status status-done">✓ 完成</span>
+          </div>
+          <div class="file-item">
+            <span class="file-icon">📄</span>
+            <div class="file-info">
+              <div class="file-name">合同扫描件.pdf → .docx</div>
+              <div class="file-size">2026-06-25 19:43 · 3.2 MB</div>
+            </div>
+            <span class="file-status status-done">✓ 完成</span>
+          </div>
+          <div class="file-item">
+            <span class="file-icon">⏺</span>
+            <div class="file-info">
+              <div class="file-name">操作演示录制.mp4</div>
+              <div class="file-size">2026-06-24 15:30 · 时长 4:28</div>
+            </div>
+            <span class="file-status status-done">✓ 完成</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ IMAGE COMPRESS PAGE ============ -->
+    <div class="page" id="page-img">
+      <div class="ad-banner">
+        <span class="ad-tag">广告位</span>
+        <span class="ad-text">图片处理专区 · 广告内容由远程数据库动态配置下发</span>
+        <span class="ad-close" onclick="this.parentElement.style.display='none'">×</span>
+      </div>
+
+      <div class="card">
+        <div class="card-title">上传图片文件</div>
+        <div class="card-sub">支持 JPG · PNG · WebP · BMP，可批量拖拽上传</div>
+        <div class="upload-zone" onclick="addDemoFiles('img')">
+          <div class="upload-icon">📁</div>
+          <div class="upload-text">点击选择图片，或将图片文件拖拽到此处</div>
+          <div class="upload-hint">单次最多 50 张 · 单文件不超过 20 MB</div>
+        </div>
+        <div class="info-box tip">政府网站通常要求照片大小不超过 200KB，建议将「目标大小」设置为 150~200KB。</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">压缩参数设置</div>
+        <div class="card-sub">灵活调整，满足不同平台要求</div>
+        <div class="settings-row">
+          <span class="settings-label">压缩模式</span>
+          <div class="settings-control">
+            <select id="imgMode" onchange="toggleImgMode()">
+              <option value="size">按目标大小（KB）</option>
+              <option value="quality">按质量比例（%）</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-row" id="imgSizeRow">
+          <span class="settings-label">目标大小</span>
+          <div class="settings-control">
+            <input type="range" id="imgSize" min="50" max="2000" value="200" oninput="document.getElementById('imgSizeVal').textContent=this.value+'KB'">
+          </div>
+          <span class="value-badge" id="imgSizeVal">200 KB</span>
+        </div>
+        <div class="settings-row" id="imgQualRow" style="display:none">
+          <span class="settings-label">压缩质量</span>
+          <div class="settings-control">
+            <input type="range" id="imgQual" min="10" max="100" value="75" oninput="document.getElementById('imgQualVal').textContent=this.value+'%'">
+          </div>
+          <span class="value-badge" id="imgQualVal">75%</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">输出格式</span>
+          <div class="settings-control">
+            <select>
+              <option>保持原格式</option>
+              <option>统一转为 JPG</option>
+              <option>统一转为 PNG</option>
+              <option>统一转为 WebP</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">输出目录</span>
+          <div class="settings-control" style="display:flex;gap:8px;align-items:center">
+            <input type="text" style="flex:1;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px" value="D:\Desktop\压缩图片\" placeholder="选择保存路径...">
+            <button class="topbar-btn" style="white-space:nowrap">浏览…</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="imgFileList" style="display:none">
+        <div class="card-title">待处理文件列表</div>
+        <div class="card-sub">共 <span id="imgCount">0</span> 张图片</div>
+        <div class="file-list" id="imgFiles"></div>
+        <div style="margin-top:16px;display:flex;gap:10px">
+          <button class="topbar-btn primary" onclick="runImgCompress()" id="imgRunBtn">开始压缩</button>
+          <button class="topbar-btn" onclick="clearImgList()">清空列表</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ PDF PAGE ============ -->
+    <div class="page" id="page-pdf">
+      <div class="ad-banner">
+        <span class="ad-tag">广告位</span>
+        <span class="ad-text">文档转换专区 · 广告内容由远程数据库动态配置下发</span>
+        <span class="ad-close" onclick="this.parentElement.style.display='none'">×</span>
+      </div>
+
+      <div class="card">
+        <div class="card-title">上传 PDF 文件</div>
+        <div class="card-sub">支持单文件或批量转换，全程本地处理，文件不上传至网络</div>
+        <div class="upload-zone" onclick="addDemoPdf()">
+          <div class="upload-icon">📂</div>
+          <div class="upload-text">点击选择 PDF 文件，或拖拽至此处</div>
+          <div class="upload-hint">支持批量上传 · 单文件不超过 100 MB · 仅 .pdf 格式</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">转换选项</div>
+        <div class="card-sub">根据文档类型调整识别策略</div>
+        <div class="settings-row">
+          <span class="settings-label">文档类型</span>
+          <div class="settings-control">
+            <select>
+              <option>普通 PDF（数字文档）</option>
+              <option>扫描版 PDF（需 OCR 识别）</option>
+              <option>混合类型（自动判断）</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">输出格式</span>
+          <div class="settings-control">
+            <select>
+              <option>Word 2016+ (.docx)</option>
+              <option>Word 2003 (.doc)</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">保留格式</span>
+          <div class="settings-control" style="display:flex;gap:12px;align-items:center;font-size:12px">
+            <label><input type="checkbox" checked> 表格</label>
+            <label><input type="checkbox" checked> 字体样式</label>
+            <label><input type="checkbox"> 页眉页脚</label>
+            <label><input type="checkbox" checked> 段落格式</label>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">输出目录</span>
+          <div class="settings-control" style="display:flex;gap:8px;align-items:center">
+            <input type="text" style="flex:1;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px" value="D:\Desktop\Word文档\" placeholder="选择保存路径...">
+            <button class="topbar-btn" style="white-space:nowrap">浏览…</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="pdfFileList" style="display:none">
+        <div class="card-title">转换队列</div>
+        <div class="card-sub">共 <span id="pdfCount">0</span> 个文件</div>
+        <div class="file-list" id="pdfFiles"></div>
+        <div style="margin-top:16px;display:flex;gap:10px">
+          <button class="topbar-btn primary" onclick="runPdfConvert()">开始转换</button>
+          <button class="topbar-btn" onclick="clearPdfList()">清空列表</button>
+        </div>
+      </div>
+
+      <div class="info-box warn">
+        <strong>注意：</strong>扫描版 PDF 的 OCR 识别依赖本地 Tesseract 引擎，首次使用需在「系统设置」中配置 OCR 路径。
+      </div>
+    </div>
+
+    <!-- ============ RECORD PAGE ============ -->
+    <div class="page" id="page-record">
+      <div class="ad-banner">
+        <span class="ad-tag">广告位</span>
+        <span class="ad-text">录屏工具专区 · 广告内容由远程数据库动态配置下发</span>
+        <span class="ad-close" onclick="this.parentElement.style.display='none'">×</span>
+      </div>
+
+      <div class="card">
+        <div class="card-title">录制参数配置</div>
+        <div class="card-sub">开始录制前请完成参数设置</div>
+        <div class="record-settings-grid">
+          <div class="record-setting-card">
+            <div class="record-setting-label">录制区域</div>
+            <select style="width:100%;margin-top:4px">
+              <option>全屏录制</option>
+              <option>自定义区域</option>
+              <option>当前活动窗口</option>
+            </select>
+          </div>
+          <div class="record-setting-card">
+            <div class="record-setting-label">视频帧率</div>
+            <select style="width:100%;margin-top:4px">
+              <option>30 fps（推荐）</option>
+              <option>60 fps（高流畅度）</option>
+              <option>15 fps（节省空间）</option>
+            </select>
+          </div>
+          <div class="record-setting-card">
+            <div class="record-setting-label">音频来源</div>
+            <select style="width:100%;margin-top:4px">
+              <option>仅系统声音</option>
+              <option>仅麦克风</option>
+              <option>系统声音 + 麦克风</option>
+              <option>不录制音频</option>
+            </select>
+          </div>
+          <div class="record-setting-card">
+            <div class="record-setting-label">输出格式</div>
+            <select style="width:100%;margin-top:4px">
+              <option>MP4 (H.264)</option>
+              <option>AVI</option>
+              <option>GIF 动图</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">视频分辨率</span>
+          <div class="settings-control">
+            <select>
+              <option>跟随屏幕分辨率（1920×1080）</option>
+              <option>1280×720</option>
+              <option>2560×1440（2K）</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">保存路径</span>
+          <div class="settings-control" style="display:flex;gap:8px;align-items:center">
+            <input type="text" style="flex:1;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px" value="D:\Desktop\录屏文件\" placeholder="选择保存路径...">
+            <button class="topbar-btn" style="white-space:nowrap">浏览…</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="text-align:center">
+        <div class="card-title">录制控制台</div>
+        <div class="card-sub">点击红色按钮开始录制，再次点击停止</div>
+        <div class="record-area">
+          <div>
+            <button class="record-btn" id="recBtn" onclick="toggleRecord()">⏺</button>
+          </div>
+          <div class="record-timer" id="recTimer">00:00:00</div>
+          <div class="record-hint" id="recHint">就绪，点击开始录制</div>
+        </div>
+        <div style="display:flex;justify-content:center;gap:10px;margin-top:8px">
+          <button class="topbar-btn" id="recPauseBtn" style="display:none" onclick="pauseRecord()">⏸ 暂停</button>
+          <button class="topbar-btn primary" id="recSaveBtn" style="display:none" onclick="saveRecord()">💾 保存录屏</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">最近录屏文件</div>
+        <div class="card-sub">本地保存记录</div>
+        <div class="file-list">
+          <div class="file-item">
+            <span class="file-icon">🎬</span>
+            <div class="file-info">
+              <div class="file-name">录屏_2026-06-25_22-10.mp4</div>
+              <div class="file-size">时长 4:28 · 大小 187 MB · 1920×1080</div>
+            </div>
+            <button class="topbar-btn" style="font-size:11px">打开</button>
+          </div>
+          <div class="file-item">
+            <span class="file-icon">🎬</span>
+            <div class="file-info">
+              <div class="file-name">录屏_2026-06-24_15-30.mp4</div>
+              <div class="file-size">时长 2:12 · 大小 92 MB · 1920×1080</div>
+            </div>
+            <button class="topbar-btn" style="font-size:11px">打开</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ GUIDE PAGE ============ -->
+    <div class="page" id="page-guide">
+      <div class="guide-tabs">
+        <div class="guide-tab active" onclick="switchGuideTab(this, 'gtInstall')">安装指南</div>
+        <div class="guide-tab" onclick="switchGuideTab(this, 'gtImg')">图片压缩</div>
+        <div class="guide-tab" onclick="switchGuideTab(this, 'gtPdf')">PDF 转换</div>
+        <div class="guide-tab" onclick="switchGuideTab(this, 'gtRecord')">屏幕录制</div>
+        <div class="guide-tab" onclick="switchGuideTab(this, 'gtFaq')">常见问题</div>
+      </div>
+
+      <!-- 安装指南 -->
+      <div class="card" id="gtInstall">
+        <div class="card-title">安装指南 · 从零开始</div>
+        <div class="card-sub">请按照以下步骤完成安装，全程约 5 分钟</div>
+        <div class="info-box tip">百宝箱支持 Windows 10 / 11，建议使用 1920×1080 及以上分辨率。</div>
+        <div class="guide-step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <div class="step-title">下载安装包</div>
+            <div class="step-desc">从官方渠道下载最新版本 <strong>BaibaoBOX_v1.0_Setup.exe</strong>，文件大小约 85MB。请勿从第三方网站下载，防止安全风险。</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <div class="step-title">运行安装程序</div>
+            <div class="step-desc">双击安装包，若弹出 UAC 权限提示，点击「是」允许运行。按提示选择安装目录（默认：C:\Program Files\BaibaoBOX）。</div>
+            <div class="step-code">安装路径不建议含有中文或空格</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <div class="step-title">安装依赖组件</div>
+            <div class="step-desc">安装程序会自动检测并提示安装必要依赖：Python 运行时（内置）、PDF 处理引擎、OCR 组件（可选，用于扫描版 PDF）。</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <div class="step-title">完成安装并启动</div>
+            <div class="step-desc">安装完成后，桌面将出现百宝箱图标，双击即可启动。首次启动会进行初始化配置，约需 10 秒。</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">5</div>
+          <div class="step-content">
+            <div class="step-title">（可选）配置 OCR 路径</div>
+            <div class="step-desc">若需要处理扫描版 PDF，请前往「系统设置 → PDF 转换 → OCR 引擎路径」，指定 Tesseract 安装目录。</div>
+            <div class="step-code">默认路径：C:\Program Files\Tesseract-OCR\tesseract.exe</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 图片压缩指南 -->
+      <div class="card" id="gtImg" style="display:none">
+        <div class="card-title">图片批量压缩 · 操作指南</div>
+        <div class="card-sub">适用于政府网站、系统上传等有大小限制的场景</div>
+        <div class="guide-step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <div class="step-title">添加图片</div>
+            <div class="step-desc">点击左侧菜单「图片压缩」，在上传区域点击或拖拽图片文件。支持 JPG、PNG、WebP、BMP 格式，一次最多添加 50 张。</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <div class="step-title">选择压缩模式</div>
+            <div class="step-desc"><strong>按目标大小</strong>：适合有明确大小要求的场景（如"不超过 200KB"）。<strong>按质量比例</strong>：适合追求视觉效果的场景，75% 质量通常肉眼无明显差异。</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <div class="step-title">设置输出目录并开始压缩</div>
+            <div class="step-desc">选择压缩后文件的保存位置，点击「开始压缩」，进度会实时显示。压缩完成后可查看每张图片的压缩比。</div>
+          </div>
+        </div>
+        <div class="info-box warn">若图片原本已小于目标大小，将跳过压缩直接复制，不会放大图片。</div>
+      </div>
+
+      <!-- PDF指南 -->
+      <div class="card" id="gtPdf" style="display:none">
+        <div class="card-title">PDF 转 Word · 操作指南</div>
+        <div class="card-sub">将 PDF 文档转换为可编辑的 Word 文档</div>
+        <div class="guide-step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <div class="step-title">上传 PDF 文件</div>
+            <div class="step-desc">点击左侧「PDF 转 Word」，将 PDF 文件拖拽到上传区域。可一次上传多个文件进行批量转换。</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <div class="step-title">选择文档类型</div>
+            <div class="step-desc">若 PDF 是直接用电脑创建的（文字可复制），选「普通 PDF」。若是拍照或扫描仪扫描的，选「扫描版 PDF」（需提前安装 OCR 组件）。</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <div class="step-title">点击「开始转换」</div>
+            <div class="step-desc">转换时间取决于文件大小和页数，通常每页约 1~3 秒。转换完成后，Word 文件将保存在指定输出目录。</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 录屏指南 -->
+      <div class="card" id="gtRecord" style="display:none">
+        <div class="card-title">屏幕录制 · 操作指南</div>
+        <div class="card-sub">调用 Windows 系统原生能力进行录屏</div>
+        <div class="guide-step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <div class="step-title">配置录制参数</div>
+            <div class="step-desc">选择录制区域（全屏/自定义/当前窗口）、帧率、音频来源和输出格式，根据实际需求调整。</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <div class="step-title">开始录制</div>
+            <div class="step-desc">点击红色录制按钮，录制开始。顶部状态栏将显示录制时长。</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <div class="step-title">暂停 / 停止并保存</div>
+            <div class="step-desc">点击「暂停」可临时暂停录制；点击「停止并保存」完成录制，文件将自动保存至指定目录。</div>
+          </div>
+        </div>
+        <div class="info-box tip">推荐使用 30fps + MP4 格式，平衡视频流畅度和文件大小。录制 1 小时约占用 1~3 GB 存储空间。</div>
+      </div>
+
+      <!-- FAQ -->
+      <div class="card" id="gtFaq" style="display:none">
+        <div class="card-title">常见问题解答</div>
+        <div class="card-sub">遇到问题先看这里</div>
+        <div class="guide-step">
+          <div class="step-num">Q</div>
+          <div class="step-content">
+            <div class="step-title">压缩后图片变模糊怎么办？</div>
+            <div class="step-desc">调高质量比例（建议不低于 60%），或适当放宽目标大小限制。JPG 格式对质量损失更敏感，PNG 无损压缩效果更好。</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">Q</div>
+          <div class="step-content">
+            <div class="step-title">PDF 转换后格式错乱？</div>
+            <div class="step-desc">复杂排版（如多栏、特殊字体）转换效果可能不理想，属于正常现象。建议转换后在 Word 中手动微调。扫描版 PDF 建议先保证扫描清晰度。</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">Q</div>
+          <div class="step-content">
+            <div class="step-title">录屏时系统声音没有录入？</div>
+            <div class="step-desc">请检查 Windows 声音设置中「立体声混音」是否已启用，部分声卡驱动默认禁用该选项。或在录制参数中选择「系统声音 + 麦克风」。</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">Q</div>
+          <div class="step-content">
+            <div class="step-title">文件数据会上传到云端吗？</div>
+            <div class="step-desc">不会。百宝箱所有功能均在本地运行，文件不会上传至任何服务器。唯一的网络请求是广告位的内容加载（可在设置中关闭）。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ SETTINGS PAGE ============ -->
+    <div class="page" id="page-settings">
+      <div class="card">
+        <div class="settings-section-title">外观与显示</div>
+        <div class="settings-item">
+          <div class="settings-item-info">
+            <div class="settings-item-label">主题色</div>
+            <div class="settings-item-sub">可选蓝色、青绿、紫色、琥珀、橙红</div>
+          </div>
+          <div class="theme-dots" style="gap:8px">
+            <div class="theme-dot selected" style="width:18px;height:18px;background:#1877F2;border:2px solid var(--primary)" onclick="setTheme('')"></div>
+            <div class="theme-dot" style="width:18px;height:18px;background:#0F9E75" onclick="setTheme('teal')"></div>
+            <div class="theme-dot" style="width:18px;height:18px;background:#7F77DD" onclick="setTheme('purple')"></div>
+            <div class="theme-dot" style="width:18px;height:18px;background:#BA7517" onclick="setTheme('amber')"></div>
+            <div class="theme-dot" style="width:18px;height:18px;background:#D85A30" onclick="setTheme('coral')"></div>
+          </div>
+        </div>
+        <div class="settings-item">
+          <div class="settings-item-info">
+            <div class="settings-item-label">开机自启动</div>
+            <div class="settings-item-sub">Windows 启动时自动运行百宝箱</div>
+          </div>
+          <div class="toggle-switch" onclick="this.classList.toggle('on')"><div class="toggle-knob"></div></div>
+        </div>
+        <div class="settings-item">
+          <div class="settings-item-info">
+            <div class="settings-item-label">最小化到系统托盘</div>
+            <div class="settings-item-sub">关闭窗口时最小化到通知区域</div>
+          </div>
+          <div class="toggle-switch on" onclick="this.classList.toggle('on')"><div class="toggle-knob"></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="settings-section-title">图片压缩</div>
+        <div class="settings-item">
+          <div class="settings-item-info">
+            <div class="settings-item-label">默认输出目录</div>
+            <div class="settings-item-sub">压缩后图片的默认保存位置</div>
+          </div>
+          <input type="text" value="D:\Desktop\压缩图片\" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;width:200px">
+        </div>
+        <div class="settings-item">
+          <div class="settings-item-info">
+            <div class="settings-item-label">压缩后原文件处理</div>
+            <div class="settings-item-sub">原始图片文件的保留策略</div>
+          </div>
+          <select style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px">
+            <option>保留原文件</option>
+            <option>移入回收站</option>
+            <option>直接覆盖原文件</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="settings-section-title">PDF 转换</div>
+        <div class="settings-item">
+          <div class="settings-item-info">
+            <div class="settings-item-label">OCR 引擎路径</div>
+            <div class="settings-item-sub">用于识别扫描版 PDF 中的文字</div>
+          </div>
+          <input type="text" value="C:\Program Files\Tesseract-OCR\tesseract.exe" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;width:260px">
+        </div>
+        <div class="settings-item">
+          <div class="settings-item-info">
+            <div class="settings-item-label">默认输出目录</div>
+            <div class="settings-item-sub">转换后 Word 文件的保存位置</div>
+          </div>
+          <input type="text" value="D:\Desktop\Word文档\" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;width:200px">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="settings-section-title">屏幕录制</div>
+        <div class="settings-item">
+          <div class="settings-item-info">
+            <div class="settings-item-label">录制文件命名规则</div>
+            <div class="settings-item-sub">支持日期时间变量</div>
+          </div>
+          <input type="text" value="录屏_{YYYY}-{MM}-{DD}_{HH}-{mm}" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;width:220px">
+        </div>
+        <div class="settings-item">
+          <div class="settings-item-info">
+            <div class="settings-item-label">录制快捷键</div>
+            <div class="settings-item-sub">全局快捷键开始/停止录制</div>
+          </div>
+          <input type="text" value="Ctrl + Alt + R" style="border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;width:140px">
+        </div>
+      </div>
+
+      <!-- 广告位配置 -->
+      <div class="card">
+        <div class="settings-section-title">广告位管理（开发者选项）</div>
+        <div class="ad-config-box">
+          <div class="ad-config-title">远程广告数据库配置</div>
+          <div class="ad-field">
+            <label>广告数据接口 URL</label>
+            <input type="text" placeholder="https://your-api.com/ads/config" value="">
+          </div>
+          <div class="ad-field">
+            <label>接口密钥（API Key）</label>
+            <input type="text" placeholder="留空则不显示广告" value="">
+          </div>
+          <div class="ad-field" style="display:flex;align-items:center;gap:10px;margin-top:8px">
+            <div class="toggle-switch on" onclick="this.classList.toggle('on')"><div class="toggle-knob"></div></div>
+            <span style="font-size:12px;color:var(--text-sub)">启用广告展示（关闭后不会加载任何广告）</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-hint);margin-top:8px;line-height:1.6">广告内容由服务端下发，本地仅负责展示。广告加载失败时自动降级不显示，不影响主功能使用。</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:8px">
+        <button class="topbar-btn primary">保存设置</button>
+        <button class="topbar-btn">恢复默认</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const pages = {
+  home: { title: '首页总览', action: '开始使用' },
+  img: { title: '图片批量压缩', action: '添加图片' },
+  pdf: { title: 'PDF 转 Word', action: '上传 PDF' },
+  record: { title: '屏幕录制', action: '开始录制' },
+  guide: { title: '使用指南', action: '下载安装包' },
+  settings: { title: '系统设置', action: '保存设置' }
+};
+
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const nav = [...document.querySelectorAll('.nav-item')].find(n => n.getAttribute('onclick') === "showPage('" + id + "')");
+  if (nav) nav.classList.add('active');
+  document.getElementById('pageTitle').textContent = pages[id].title;
+  document.getElementById('topAction').textContent = pages[id].action;
+}
+
+function handleTopAction() {
+  const active = document.querySelector('.page.active').id.replace('page-','');
+  if (active === 'home') showPage('img');
+  else if (active === 'img') addDemoFiles('img');
+  else if (active === 'pdf') addDemoPdf();
+  else if (active === 'record') toggleRecord();
+}
+
+function setTheme(t) {
+  const app = document.getElementById('app');
+  app.className = t ? 'theme-' + t : '';
+  document.querySelectorAll('.theme-dot').forEach(d => {
+    d.classList.toggle('selected', (d.dataset.theme || d.getAttribute('onclick').includes("'" + t + "'")) && d.getAttribute('onclick').includes("'" + t + "'"));
+  });
+}
+
+function toggleImgMode() {
+  const m = document.getElementById('imgMode').value;
+  document.getElementById('imgSizeRow').style.display = m === 'size' ? 'flex' : 'none';
+  document.getElementById('imgQualRow').style.display = m === 'quality' ? 'flex' : 'none';
+}
+
+const imgDemoFiles = [
+  { name: '身份证正面.jpg', size: '1.2 MB', target: '180 KB' },
+  { name: '学历证书.png', size: '3.4 MB', target: '200 KB' },
+  { name: '工作证明_扫描.jpg', size: '2.1 MB', target: '200 KB' },
+  { name: '营业执照.jpg', size: '4.7 MB', target: '200 KB' },
+  { name: '项目照片_001.jpg', size: '5.8 MB', target: '150 KB' },
+];
+let imgFilesAdded = false;
+
+function addDemoFiles() {
+  if (imgFilesAdded) return;
+  imgFilesAdded = true;
+  const card = document.getElementById('imgFileList');
+  const list = document.getElementById('imgFiles');
+  card.style.display = 'block';
+  document.getElementById('imgCount').textContent = imgDemoFiles.length;
+  list.innerHTML = imgDemoFiles.map(f => `
+    <div class="file-item">
+      <span class="file-icon">🖼</span>
+      <div class="file-info">
+        <div class="file-name">${f.name}</div>
+        <div class="file-size">原始大小：${f.size} → 目标：${f.target}</div>
+      </div>
+      <span class="file-status status-wait">待压缩</span>
+    </div>`).join('');
+}
+
+function clearImgList() {
+  imgFilesAdded = false;
+  document.getElementById('imgFileList').style.display = 'none';
+  document.getElementById('imgFiles').innerHTML = '';
+}
+
+function runImgCompress() {
+  const items = document.querySelectorAll('#imgFiles .file-item');
+  let i = 0;
+  const btn = document.getElementById('imgRunBtn');
+  btn.disabled = true;
+  btn.textContent = '压缩中...';
+  function next() {
+    if (i >= items.length) {
+      btn.disabled = false;
+      btn.textContent = '开始压缩';
+      return;
+    }
+    const status = items[i].querySelector('.file-status');
+    status.className = 'file-status status-proc';
+    status.textContent = '处理中…';
+    setTimeout(() => {
+      status.className = 'file-status status-done';
+      const saved = (Math.random()*90+60).toFixed(0);
+      status.textContent = '✓ 已压缩 ' + saved + '%';
+      i++;
+      setTimeout(next, 300);
+    }, 700 + Math.random()*500);
+  }
+  next();
+}
+
+const pdfDemoFiles = [
+  { name: '合同扫描件.pdf', size: '3.2 MB', pages: '8页' },
+  { name: '政府批文.pdf', size: '1.5 MB', pages: '3页' },
+];
+let pdfFilesAdded = false;
+
+function addDemoPdf() {
+  if (pdfFilesAdded) return;
+  pdfFilesAdded = true;
+  const card = document.getElementById('pdfFileList');
+  const list = document.getElementById('pdfFiles');
+  card.style.display = 'block';
+  document.getElementById('pdfCount').textContent = pdfDemoFiles.length;
+  list.innerHTML = pdfDemoFiles.map(f => `
+    <div class="file-item">
+      <span class="file-icon">📄</span>
+      <div class="file-info">
+        <div class="file-name">${f.name}</div>
+        <div class="file-size">${f.size} · ${f.pages}</div>
+      </div>
+      <span class="file-status status-wait">待转换</span>
+    </div>`).join('');
+}
+
+function clearPdfList() {
+  pdfFilesAdded = false;
+  document.getElementById('pdfFileList').style.display = 'none';
+  document.getElementById('pdfFiles').innerHTML = '';
+}
+
+function runPdfConvert() {
+  const items = document.querySelectorAll('#pdfFiles .file-item');
+  let i = 0;
+  function next() {
+    if (i >= items.length) return;
+    const status = items[i].querySelector('.file-status');
+    status.className = 'file-status status-proc';
+    status.textContent = '转换中…';
+    setTimeout(() => {
+      status.className = 'file-status status-done';
+      status.textContent = '✓ 已完成';
+      i++;
+      setTimeout(next, 500);
+    }, 1200 + Math.random()*800);
+  }
+  next();
+}
+
+let isRecording = false;
+let isPaused = false;
+let recInterval = null;
+let recSeconds = 0;
+
+function toggleRecord() {
+  if (!isRecording) {
+    isRecording = true;
+    const btn = document.getElementById('recBtn');
+    btn.classList.add('recording');
+    btn.textContent = '■';
+    document.getElementById('recHint').textContent = '正在录制中…';
+    document.getElementById('recPauseBtn').style.display = '';
+    document.getElementById('recSaveBtn').style.display = '';
+    recSeconds = 0;
+    recInterval = setInterval(() => {
+      if (!isPaused) {
+        recSeconds++;
+        const h = String(Math.floor(recSeconds/3600)).padStart(2,'0');
+        const m = String(Math.floor(recSeconds%3600/60)).padStart(2,'0');
+        const s = String(recSeconds%60).padStart(2,'0');
+        document.getElementById('recTimer').textContent = h+':'+m+':'+s;
+      }
+    }, 1000);
+  } else {
+    stopRecord();
+  }
+}
+
+function pauseRecord() {
+  isPaused = !isPaused;
+  document.getElementById('recPauseBtn').textContent = isPaused ? '▶ 继续' : '⏸ 暂停';
+  document.getElementById('recHint').textContent = isPaused ? '录制已暂停' : '正在录制中…';
+}
+
+function stopRecord() {
+  isRecording = false;
+  isPaused = false;
+  clearInterval(recInterval);
+  const btn = document.getElementById('recBtn');
+  btn.classList.remove('recording');
+  btn.textContent = '⏺';
+  document.getElementById('recHint').textContent = '录制已结束，点击保存录屏';
+}
+
+function saveRecord() {
+  document.getElementById('recHint').textContent = '文件已保存至桌面 ✓';
+  document.getElementById('recPauseBtn').style.display = 'none';
+  document.getElementById('recSaveBtn').style.display = 'none';
+  document.getElementById('recTimer').textContent = '00:00:00';
+}
+
+function switchGuideTab(el, targetId) {
+  document.querySelectorAll('.guide-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['gtInstall','gtImg','gtPdf','gtRecord','gtFaq'].forEach(id => {
+    document.getElementById(id).style.display = id === targetId ? 'block' : 'none';
+  });
+}
+</script>
+</body>
+</html>

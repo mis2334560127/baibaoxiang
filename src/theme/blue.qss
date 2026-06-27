@@ -1,0 +1,337 @@
+/* 百宝箱 - 海天蓝主题 (默认) */
+
+/* === 全局 === */
+QWidget {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    font-size: 13px;
+    color: #1a2640;
+    background-color: #F5F7FA;
+}
+
+/* === 侧边栏导航 === */
+#sidebar {
+    background-color: #FFFFFF;
+    border-right: 1px solid #E2E8F0;
+}
+#sidebar QPushButton {
+    background: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    padding: 10px 18px;
+    text-align: left;
+    font-size: 13px;
+    color: #5A6B85;
+    border-radius: 0;
+}
+#sidebar QPushButton:hover {
+    background-color: #E8F1FF;
+    color: #1877F2;
+}
+#sidebar QPushButton:checked {
+    background-color: #E8F1FF;
+    color: #1877F2;
+    border-left: 3px solid #1877F2;
+    font-weight: bold;
+}
+
+/* === 标题栏 === */
+#titleBar {
+    background-color: #FFFFFF;
+    border-bottom: 1px solid #E2E8F0;
+    padding: 8px 16px;
+}
+#pageTitle {
+    font-size: 18px;
+    font-weight: bold;
+    color: #1a2640;
+}
+
+/* === 卡片 === */
+.card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 10px;
+    padding: 16px;
+}
+.card-title {
+    font-size: 14px;
+    font-weight: bold;
+    color: #1a2640;
+}
+.card-sub {
+    font-size: 12px;
+    color: #5A6B85;
+}
+
+/* === 功能入口卡片（首页） === */
+.feature-card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+    padding: 20px;
+}
+.feature-card:hover {
+    border-color: #1877F2;
+    background-color: #E8F1FF;
+}
+
+/* === 按钮 === */
+QPushButton {
+    background: #1877F2;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 500;
+}
+QPushButton:hover {
+    background: #1666D9;
+}
+QPushButton:pressed {
+    background: #0C5BC4;
+}
+QPushButton:disabled {
+    background: #CBD5E1;
+    color: #94A3B8;
+}
+.secondary-btn {
+    background: #E8F1FF;
+    color: #1877F2;
+    border: 1px solid #B3D4FF;
+}
+.secondary-btn:hover {
+    background: #D0E4FF;
+}
+.outline-btn {
+    background: transparent;
+    color: #1877F2;
+    border: 1px solid #1877F2;
+}
+.outline-btn:hover {
+    background: #E8F1FF;
+}
+.danger-btn {
+    background: #DC2626;
+    color: #FFFFFF;
+}
+.danger-btn:hover {
+    background: #B91C1C;
+}
+
+/* === 输入框 === */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #1a2640;
+    font-size: 13px;
+}
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
+    border-color: #1877F2;
+}
+QComboBox::drop-down {
+    border: none;
+    padding-right: 6px;
+}
+
+/* === 进度条 === */
+QProgressBar {
+    background: #E2E8F0;
+    border: none;
+    border-radius: 4px;
+    height: 6px;
+    text-align: center;
+    font-size: 0px;
+}
+QProgressBar::chunk {
+    background: #1877F2;
+    border-radius: 4px;
+}
+
+/* === 列表 === */
+QListWidget, QTableWidget {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 4px;
+    alternate-background-color: #F8FAFC;
+}
+QListWidget::item, QTableWidget::item {
+    padding: 6px 10px;
+    border-bottom: 1px solid #F1F5F9;
+}
+QListWidget::item:selected, QTableWidget::item:selected {
+    background: #E8F1FF;
+    color: #1877F2;
+}
+
+/* === 拖拽区域 === */
+#dropZone {
+    background: #F8FAFC;
+    border: 2px dashed #CBD5E1;
+    border-radius: 12px;
+    color: #94A3B8;
+    font-size: 14px;
+}
+#dropZone:hover {
+    border-color: #1877F2;
+    background: #E8F1FF;
+    color: #1877F2;
+}
+
+/* === 统计卡片 === */
+.stat-card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 10px;
+    padding: 16px;
+}
+.stat-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #1877F2;
+}
+.stat-label {
+    font-size: 12px;
+    color: #94A3B8;
+}
+
+/* === 标签页 === */
+QTabWidget::pane {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 12px;
+}
+QTabBar::tab {
+    background: transparent;
+    border: none;
+    padding: 8px 20px;
+    font-size: 13px;
+    color: #5A6B85;
+    border-bottom: 2px solid transparent;
+}
+QTabBar::tab:selected {
+    color: #1877F2;
+    border-bottom: 2px solid #1877F2;
+    font-weight: 500;
+}
+QTabBar::tab:hover {
+    color: #1877F2;
+}
+
+/* === 滚动条 === */
+QScrollBar:vertical {
+    background: transparent;
+    width: 8px;
+}
+QScrollBar::handle:vertical {
+    background: #CBD5E1;
+    border-radius: 4px;
+    min-height: 30px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #94A3B8;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+/* === 复选框/单选框 === */
+QCheckBox, QRadioButton {
+    spacing: 8px;
+    font-size: 13px;
+    color: #1a2640;
+}
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    background: #FFFFFF;
+}
+QCheckBox::indicator:checked {
+    background: #1877F2;
+    border-color: #1877F2;
+}
+
+/* === 分组框 === */
+QGroupBox {
+    font-size: 13px;
+    font-weight: 500;
+    color: #1a2640;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    margin-top: 12px;
+    padding-top: 16px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 12px;
+    padding: 0 6px;
+}
+
+/* === 状态栏 === */
+#statusBar {
+    background: #FFFFFF;
+    border-top: 1px solid #E2E8F0;
+    padding: 6px 16px;
+    font-size: 12px;
+    color: #5A6B85;
+}
+
+/* === 广告位 === */
+#adBanner {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    padding: 10px;
+    color: #94A3B8;
+    font-size: 12px;
+}
+
+/* === 日志输出 === */
+#logOutput {
+    background: #1E293B;
+    color: #E2E8F0;
+    font-family: "Consolas", "Cascadia Code", monospace;
+    font-size: 12px;
+    border-radius: 6px;
+    padding: 10px;
+}
+
+/* === 滑块 === */
+QSlider::groove:horizontal {
+    height: 6px;
+    background: #E2E8F0;
+    border-radius: 3px;
+}
+QSlider::handle:horizontal {
+    width: 16px;
+    height: 16px;
+    background: #1877F2;
+    border-radius: 8px;
+    margin: -5px 0;
+}
+
+/* === 分割线 === */
+#separator {
+    background: #E2E8F0;
+    max-height: 1px;
+}
+
+/* === 提示信息 === */
+.hint-text {
+    color: #94A3B8;
+    font-size: 11px;
+}
+.success-text {
+    color: #0D9E6A;
+    font-size: 12px;
+}
+.error-text {
+    color: #DC2626;
+    font-size: 12px;
+}
