@@ -15,6 +15,7 @@ from src.worker_threads import RecordWorker
 from src.config import AppConfig, get_config
 from src.signals import bus
 from src.database import get_recent_records
+from src.modules.screen_recorder import _find_ffmpeg
 
 
 class RecorderPage(QWidget):
@@ -170,6 +171,24 @@ class RecorderPage(QWidget):
         if self._worker and self._worker.isRunning():
             return
 
+        # 验证 FFmpeg
+        ffmpeg_path = self._config.ffmpeg_path or ""
+        found = _find_ffmpeg(ffmpeg_path)
+        if not found:
+            QMessageBox.critical(
+                self, "FFmpeg 未找到",
+                "屏幕录制需要 FFmpeg 来编码视频，但未在系统中找到它。\n\n"
+                "请按以下步骤安装：\n"
+                "1. 下载 FFmpeg: https://ffmpeg.org/download.html\n"
+                '   （推荐 Windows 版本: gyan.dev → ffmpeg-release-full.7z）\n'
+                "2. 解压到如 D:\\ffmpeg\\ 目录\n"
+                "3. 打开「设置」页面，在「FFmpeg 路径」中填写完整路径\n"
+                '   如: D:\\ffmpeg\\bin\\ffmpeg.exe\n\n'
+                "或使用 winget 一键安装:\n"
+                "   winget install Gyan.FFmpeg"
+            )
+            return
+
         # 生成输出路径
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_dir = self._config.get_output_dir()
@@ -184,6 +203,7 @@ class RecorderPage(QWidget):
             fps=fps,
             codec=codec,
             fmt=fmt,
+            ffmpeg_path=ffmpeg_path,
         )
         self._worker.record_finished.connect(self._on_record_finished)
         self._worker.record_error.connect(self._on_record_error)

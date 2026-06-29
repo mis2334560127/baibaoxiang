@@ -5,13 +5,16 @@
 import os
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
-    QListWidget, QListWidgetItem, QProgressBar, QCheckBox,
+    QListWidget, QListWidgetItem, QProgressBar, QCheckBox, QComboBox,
     QFileDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt, pyqtSlot
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 
-from src.modules.pdf_converter import detect_pdf_type, get_pdf_page_count
+from src.modules.pdf_converter import (
+    detect_pdf_type, get_pdf_page_count,
+    check_ocr_chinese_available, get_available_ocr_languages,
+)
 from src.worker_threads import ConvertWorker
 from src.config import AppConfig, get_config
 from src.signals import bus
@@ -87,8 +90,26 @@ class PdfWordPage(QWidget):
         opts.addStretch()
         layout.addLayout(opts)
 
+        # OCR 语言状态
+        self.ocr_warning = QLabel()
+        self.ocr_warning.setWordWrap(True)
+        self.ocr_warning.setVisible(False)
+        layout.addWidget(self.ocr_warning)
+
+        # OCR 语言选择
+        ocr_lang_layout = QHBoxLayout()
+        ocr_lang_layout.addWidget(QLabel("OCR 识别语言:"))
+        self.cmb_ocr_lang = QComboBox()
+        self.cmb_ocr_lang.setFixedWidth(200)
+        ocr_lang_layout.addWidget(self.cmb_ocr_lang)
+        ocr_lang_layout.addStretch()
+        layout.addLayout(ocr_lang_layout)
+
+        # 刷新 OCR 语言列表
+        self._refresh_ocr_languages()
+
         # 提示
-        hint = QLabel("💡 转换后的 .docx 文件将保存到桌面「百宝箱输出」文件夹\n💡 扫描型 PDF 使用 OCR 识别时需安装 Tesseract（见设置页「使用指南」）")
+        hint = QLabel("💡 转换后的 .docx 文件将保存到桌面「百宝箱输出」文件夹\n💡 扫描型 PDF 使用 OCR 识别时需安装 Tesseract（见设置页「使用指南」）\n💡 OCR 模式现已支持保留段落排版、对齐方式和字号大小")
         hint.setStyleSheet("color: #94A3B8; font-size: 12px;")
         layout.addWidget(hint)
 
@@ -113,6 +134,13 @@ class PdfWordPage(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
+
+        # === 实时进度详情（页级进度） ===
+        self.progress_detail = QLabel("")
+        self.progress_detail.setStyleSheet("color: #3B9EFF; font-size: 12px; font-weight: bold;")
+        self.progress_detail.setVisible(False)
+        self.progress_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.progress_detail)
 
         # 日志
         self.log_output = QLabel("等待添加文件...")
@@ -171,6 +199,35 @@ class PdfWordPage(QWidget):
     def _update_count(self):
         self.count_label.setText(f"已添加 {len(self._files)} 个文件")
 
+    def _refresh_ocr_languages(self):
+        """刷新 OCR 语言列表和状态提示"""
+        has_cn, msg = check_ocr_chinese_available()
+        langs = get_available_ocr_languages()
+
+        # 更新下拉框
+        self.cmb_ocr_lang.clear()
+        if langs:
+            self.cmb_ocr_lang.addItems(langs)
+            # 上次使用的语言优先
+            saved_lang = self._config.pdf_ocr_lang if hasattr(self._config, 'pdf_ocr_lang') else "chi_sim+eng"
+            if saved_lang in langs:
+                self.cmb_ocr_lang.setCurrentText(saved_lang)
+            elif "chi_sim" in langs:
+                self.cmb_ocr_lang.setCurrentText("chi_sim")
+        else:
+            self.cmb_ocr_lang.addItem("eng")
+
+        # 中文语言包缺失时显示警告
+        if not has_cn:
+            self.ocr_warning.setText(f"⚠️ {msg}")
+            self.ocr_warning.setStyleSheet(
+                "color: #FF9800; background: #FFF3E0; border: 1px solid #FFE0B2; "
+                "padding: 10px; border-radius: 6px; font-size: 12px;"
+            )
+            self.ocr_warning.setVisible(True)
+        else:
+            self.ocr_warning.setVisible(False)
+
     def _on_drop_clicked(self, e):
         self._add_files()
 
@@ -189,21 +246,40 @@ class PdfWordPage(QWidget):
         if not self._files or (self._worker and self._worker.isRunning()):
             return
 
+        ocr_lang = self.cmb_ocr_lang.currentText() or "chi_sim+eng"
+
         self._worker = ConvertWorker(
             files=self._files.copy(),
             preserve_fmt=self.chk_format.isChecked(),
             preserve_img=self.chk_images.isChecked(),
             output_dir=self._config.get_output_dir(),
             force_ocr=self.chk_force_ocr.isChecked(),
+            ocr_lang=ocr_lang,
         )
+
+        # 持久化
+        self._config.pdf_ocr_lang = ocr_lang
+        self._config.pdf_preserve_formatting = self.chk_format.isChecked()
+        self._config.pdf_preserve_images = self.chk_images.isChecked()
+        self._config.save()
         self._worker.file_progress.connect(self._on_progress)
         self._worker.file_done.connect(self._on_file_done)
+        self._worker.item_progress.connect(self._on_item_progress)
 
         self.btn_convert.setVisible(False)
         self.btn_cancel.setVisible(True)
         self.progress_bar.setVisible(True)
-        self.progress_bar.setMaximum(len(self._files))
-        self._log(f"🚀 开始转换 {len(self._files)} 个 PDF 文件")
+        self.progress_detail.setVisible(True)
+        # 预计算总页数作为进度条最大值（与详情显示的页级进度对应）
+        total_pages = 0
+        for fp in self._files:
+            try:
+                pc = get_pdf_page_count(fp)
+                total_pages += (pc if pc > 0 else 1)
+            except Exception:
+                total_pages += 1
+        self.progress_bar.setMaximum(total_pages)
+        self._log(f"🚀 开始转换 {len(self._files)} 个 PDF 文件（共 {total_pages} 页）")
         self._worker.start()
 
     def _cancel(self):
@@ -216,6 +292,17 @@ class PdfWordPage(QWidget):
     @pyqtSlot(int, int)
     def _on_progress(self, current: int, total: int):
         self.progress_bar.setValue(current)
+
+    @pyqtSlot(str, int, int)
+    def _on_item_progress(self, filename: str, current: int, total: int):
+        """PDF 页级实时进度（OCR 逐页识别 / pdf2docx 转换）"""
+        if current >= total:
+            self.progress_detail.setText(f"✅ {filename} 完成")
+        elif total <= 1:
+            # pdf2docx 黑盒模式：不显示页数，只显示正在转换
+            self.progress_detail.setText(f"⏳ 正在转换: {filename}")
+        else:
+            self.progress_detail.setText(f"⏳ 正在转换: {filename}  第{current}/{total}页")
 
     @pyqtSlot(str, bool, str)
     def _on_file_done(self, filename: str, success: bool, msg: str):
@@ -232,6 +319,7 @@ class PdfWordPage(QWidget):
         self.btn_convert.setVisible(True)
         self.btn_cancel.setVisible(False)
         self.progress_bar.setVisible(False)
+        self.progress_detail.setVisible(False)
         self._worker = None
 
     def _log(self, text: str):

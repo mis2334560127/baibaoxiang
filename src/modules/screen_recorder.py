@@ -18,26 +18,50 @@ import threading
 from pathlib import Path
 
 
-def _find_ffmpeg() -> str:
-    """查找 FFmpeg 可执行文件"""
-    # 1. 检查常见安装路径
+def _find_ffmpeg(custom_path: str = "") -> str:
+    """
+    查找 FFmpeg 可执行文件。
+
+    优先级：
+    1. 用户指定的自定义路径
+    2. 项目内置 ffmpeg 目录
+    3. 常见安装路径
+    4. 系统 PATH
+    """
+    # 0. 用户自定义路径
+    if custom_path and os.path.isfile(custom_path):
+        return custom_path
+
+    # 1. 项目自带 ffmpeg（打包时可能嵌入）
+    import sys
+    if getattr(sys, 'frozen', False):
+        app_dir = os.path.dirname(sys.executable)
+    else:
+        app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    bundled = os.path.join(app_dir, "ffmpeg", "ffmpeg.exe")
+    if os.path.isfile(bundled):
+        return bundled
+
+    # 2. 常见安装路径
     common_paths = [
         os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "ffmpeg", "bin", "ffmpeg.exe"),
         os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "ffmpeg", "bin", "ffmpeg.exe"),
         os.path.expandvars(r"%LOCALAPPDATA%\ffmpeg\bin\ffmpeg.exe"),
         os.path.expandvars(r"%USERPROFILE%\ffmpeg\bin\ffmpeg.exe"),
+        r"D:\ffmpeg\bin\ffmpeg.exe",
+        r"C:\ffmpeg\bin\ffmpeg.exe",
     ]
     for p in common_paths:
         if os.path.isfile(p):
             return p
 
-    # 2. 检查 PATH
+    # 3. 系统 PATH
     import shutil
     found = shutil.which("ffmpeg")
     if found:
         return found
 
-    return "ffmpeg.exe"  # 最后尝试直接调用
+    return ""  # 未找到，返回空字符串
 
 
 def _get_screen_size():
@@ -99,6 +123,7 @@ def record_screen(
     fmt: str = "mp4",
     region: tuple | None = None,
     stop_event: threading.Event | None = None,
+    ffmpeg_path: str = "",
 ) -> tuple[str, float]:
     """
     录制屏幕。
@@ -110,11 +135,24 @@ def record_screen(
         fmt:          容器格式 (mp4 / avi)
         region:       录制区域 (x, y, w, h)，None=全屏
         stop_event:   外部停止信号
+        ffmpeg_path:  自定义 FFmpeg 路径（空=自动查找）
 
     Returns:
         (output_path, duration_seconds)
     """
-    ffmpeg = _find_ffmpeg()
+    ffmpeg = _find_ffmpeg(ffmpeg_path)
+    if not ffmpeg:
+        raise RuntimeError(
+            "未找到 FFmpeg，屏幕录制功能需要 FFmpeg 编码视频。\n\n"
+            "请按以下步骤安装：\n"
+            "1. 下载 FFmpeg: https://ffmpeg.org/download.html\n"
+            '   （推荐 Windows 版本: gyan.dev → ffmpeg-release-full.7z）\n'
+            '2. 解压到如 D:\\ffmpeg\\ 目录（路径不要含中文）\n'
+            "3. 在百宝箱「设置页面」中指定 ffmpeg.exe 的完整路径\n"
+            "   如: D:\\ffmpeg\\bin\\ffmpeg.exe\n\n"
+            "或使用 winget 一键安装:\n"
+            "   winget install Gyan.FFmpeg"
+        )
 
     if region:
         x, y, rw, rh = region

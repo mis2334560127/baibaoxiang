@@ -59,6 +59,7 @@ class AppConfig:
     # PDF 默认参数
     pdf_preserve_formatting: bool = True
     pdf_preserve_images: bool = True
+    pdf_ocr_lang: str = "chi_sim+eng"  # OCR 识别语言
 
     @classmethod
     def load(cls) -> "AppConfig":

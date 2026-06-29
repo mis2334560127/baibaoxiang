@@ -24,6 +24,7 @@ def compress_image(
     output_dir: str = "",
     max_width: int = 0,
     max_height: int = 0,
+    progress_callback: callable = None,
 ) -> str:
     """
     压缩单张图片。
@@ -36,10 +37,18 @@ def compress_image(
         output_dir:  输出目录（空则同源目录）
         max_width:   最大宽度（像素），0=不限制
         max_height:  最大高度（像素），0=不限制
+        progress_callback:  进度回调 callable(step, total_steps)，可为 None
 
     Returns:
         输出文件路径
     """
+    def _report(step: int, total: int):
+        if progress_callback:
+            try:
+                progress_callback(step, total)
+            except Exception:
+                pass
+
     # 打开图片
     img = Image.open(file_path)
 
@@ -74,17 +83,21 @@ def compress_image(
 
     if mode == "quality":
         # ---- 按质量压缩 ----
+        _report(1, 2)  # 开始
         # 注意：PNG 为无损格式，quality 参数对其不生效
         save_kwargs = _get_save_kwargs(ext, quality)
         out_name = f"{base}_compressed{ext}"
         out_path = os.path.join(out_dir, out_name)
         _safe_save(img, out_path, ext, save_kwargs)
+        _report(2, 2)  # 完成
         return out_path
 
     else:
         # ---- 按目标大小压缩（二分搜索逼近） ----
         out_name = f"{base}_compressed.jpg"
         out_path = os.path.join(out_dir, out_name)
+
+        _report(0, MAX_ITERATIONS + 1)  # 开始
 
         # 先在高质量保存一次，检查是否已经足够小
         buf = io.BytesIO()
@@ -93,6 +106,7 @@ def compress_image(
         else:
             img.save(buf, format='JPEG', quality=95, optimize=True)
         if buf.getbuffer().nbytes / 1024 <= target_kb:
+            _report(MAX_ITERATIONS + 1, MAX_ITERATIONS + 1)
             with open(out_path, 'wb') as f:
                 f.write(buf.getvalue())
             return out_path
@@ -100,7 +114,9 @@ def compress_image(
         # 二分搜索最优 quality
         lo, hi = 5, 95
         best_buf = buf
-        for _ in range(MAX_ITERATIONS):
+        for i in range(MAX_ITERATIONS):
+            if progress_callback:
+                _report(i + 1, MAX_ITERATIONS)
             mid = (lo + hi) // 2
             buf = io.BytesIO()
             img.save(buf, format='JPEG', quality=mid, optimize=True)
@@ -115,6 +131,7 @@ def compress_image(
                 lo = mid + 1
                 best_buf = buf
 
+        _report(MAX_ITERATIONS + 1, MAX_ITERATIONS + 1)  # 完成
         with open(out_path, 'wb') as f:
             f.write(best_buf.getvalue())
         return out_path

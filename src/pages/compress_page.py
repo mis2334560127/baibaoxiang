@@ -213,6 +213,13 @@ class CompressPage(QWidget):
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
 
+        # === 实时进度详情（单文件内部进度） ===
+        self.progress_detail = QLabel("")
+        self.progress_detail.setStyleSheet("color: #3B9EFF; font-size: 12px; font-weight: bold;")
+        self.progress_detail.setVisible(False)
+        self.progress_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.progress_detail)
+
         # === 日志输出 ===
         self.log_output = QLabel("等待添加文件...")
         self.log_output.setObjectName("logOutput")
@@ -324,10 +331,12 @@ class CompressPage(QWidget):
         )
         self._worker.file_progress.connect(self._on_file_progress)
         self._worker.file_done.connect(self._on_file_done)
+        self._worker.item_progress.connect(self._on_item_progress)
 
         self.btn_compress.setVisible(False)
         self.btn_cancel.setVisible(True)
         self.progress_bar.setVisible(True)
+        self.progress_detail.setVisible(True)
         self.progress_bar.setMaximum(len(self._files))
         self.progress_bar.setValue(0)
 
@@ -354,6 +363,14 @@ class CompressPage(QWidget):
         self.progress_bar.setValue(current)
         bus.status_message.emit(f"压缩中 {current}/{total}", 0)
 
+    @pyqtSlot(str, int, int)
+    def _on_item_progress(self, filename: str, current: int, total: int):
+        """单文件内部实时进度（二分搜索迭代 / 直接压缩）"""
+        if current >= total:
+            self.progress_detail.setText(f"✅ {filename} 完成")
+        else:
+            self.progress_detail.setText(f"⏳ 正在压缩: {filename}  ({current}/{total})")
+
     @pyqtSlot(str, bool, str)
     def _on_file_done(self, filename: str, success: bool, msg: str):
         icon = "✅" if success else "❌"
@@ -379,6 +396,7 @@ class CompressPage(QWidget):
         self.btn_compress.setVisible(True)
         self.btn_cancel.setVisible(False)
         self.progress_bar.setVisible(False)
+        self.progress_detail.setVisible(False)
         self._worker = None
 
     def _append_log(self, text: str):
