@@ -40,6 +40,11 @@ class SignalBus(QObject):
     ad_updated = pyqtSignal(str, str, str)    # (title, image_url, link_url)
     ad_cleared = pyqtSignal()
 
+    # Excel合并进度
+    merge_progress = pyqtSignal(int, int)
+    merge_file_done = pyqtSignal(str, bool, str)
+    merge_all_done = pyqtSignal(int, int)
+
     # 历史记录刷新
     history_updated = pyqtSignal()
 

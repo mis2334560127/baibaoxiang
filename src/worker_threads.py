@@ -5,6 +5,7 @@
 """
 import os
 import time
+import tempfile
 import threading
 from pathlib import Path
 
@@ -81,7 +82,8 @@ class ConvertWorker(QThread):
 
     def __init__(self, files: list[str], preserve_fmt: bool = True,
                  preserve_img: bool = True, output_dir: str = "",
-                 force_ocr: bool = False, ocr_lang: str = "chi_sim+eng"):
+                 force_ocr: bool = False, ocr_lang: str = "ch",
+                 preserve_layout: bool = True):
         super().__init__()
         self.files = files
         self.preserve_fmt = preserve_fmt
@@ -89,6 +91,7 @@ class ConvertWorker(QThread):
         self.output_dir = output_dir
         self.force_ocr = force_ocr
         self.ocr_lang = ocr_lang
+        self.preserve_layout = preserve_layout
         self._cancelled = False
 
     def cancel(self):
@@ -135,6 +138,7 @@ class ConvertWorker(QThread):
                 result_path = convert_pdf_to_docx(
                     fp, self.output_dir, self.preserve_fmt, self.preserve_img,
                     force_ocr=self.force_ocr, ocr_lang=self.ocr_lang,
+                    pure_ocr=not self.preserve_layout,
                     progress_callback=_on_progress,
                 )
                 cumulative_pages += file_page_count
@@ -152,6 +156,93 @@ class ConvertWorker(QThread):
 
         bus.convert_all_done.emit(success, fail)
 
+
+class ExcelMergeWorker(QThread):
+    """批量解压合并 Excel 线程"""
+    file_progress = pyqtSignal(int, int)          # (current_idx, total)
+    file_done = pyqtSignal(str, bool, str)        # (filename, success, msg)
+
+    def __init__(self, archive_files: list[str], output_path: str):
+        super().__init__()
+        self.archive_files = archive_files
+        self.output_path = output_path
+        self._cancelled = False
+
+    def cancel(self):
+        """协作式取消"""
+        self._cancelled = True
+
+    def run(self):
+        from src.modules.excel_merger import (
+            extract_excel_from_archive, read_excel_data, merge_and_write,
+        )
+
+        all_rows: list[list] = []
+        all_headers: list | None = None
+        success = fail = 0
+        total = len(self.archive_files)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for i, archive_path in enumerate(self.archive_files):
+                if self._cancelled:
+                    break
+                self.file_progress.emit(i + 1, total)
+                filename = os.path.basename(archive_path)
+
+                try:
+                    # 1. 解压提取 Excel 文件
+                    excel_files = extract_excel_from_archive(archive_path, temp_dir)
+                    if not excel_files:
+                        self.file_done.emit(filename, False, "压缩包内未找到 Excel 文件")
+                        fail += 1
+                        continue
+
+                    # 2. 逐个读取 Excel
+                    file_count = len(excel_files)
+                    for ef in excel_files:
+                        if self._cancelled:
+                            break
+                        try:
+                            headers, rows = read_excel_data(ef)
+                            if all_headers is None:
+                                all_headers = headers
+                                all_rows.extend(rows)
+                            else:
+                                # 只追加数据行（跳过表头）
+                                all_rows.extend(rows)
+                        except Exception as e:
+                            self.file_done.emit(
+                                os.path.basename(ef), False,
+                                f"读取失败: {str(e)}"
+                            )
+                            fail += 1
+                            continue
+
+                    self.file_done.emit(
+                        filename, True,
+                        f"成功读取 {file_count} 个 Excel ({len(excel_files)} 个文件)"
+                    )
+                    success += 1
+
+                except ImportError as e:
+                    self.file_done.emit(filename, False, str(e))
+                    fail += 1
+                except Exception as e:
+                    self.file_done.emit(filename, False, f"处理失败: {str(e)}")
+                    fail += 1
+
+            # 3. 写入合并结果
+            if all_headers is not None and all_rows:
+                try:
+                    merge_and_write(all_headers, all_rows, self.output_path)
+                except Exception as e:
+                    bus.merge_all_done.emit(success, fail)
+                    return
+            elif all_headers is None:
+                # 没有读取到任何数据
+                pass
+
+        bus.merge_all_done.emit(success, fail)
 
 class RecordWorker(QThread):
     """

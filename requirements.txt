@@ -11,10 +11,19 @@ Pillow>=10.2.0
 pdf2docx>=0.5.8
 python-docx>=1.1.0
 PyMuPDF>=1.23.0
-pytesseract>=0.3.10
+paddlepaddle==2.6.2
+paddleocr==2.9.1
+opencv-python>=4.9.0
+numpy>=1.26.0
 
 # === 屏幕录制辅助（Windows GDI） ===
 pywin32>=306
+
+# === Excel 处理（解压合并） ===
+openpyxl>=3.1.0
+xlrd>=2.0.0
+rarfile>=4.1
+py7zr>=0.21.0
 
 # === 系统工具 ===
 psutil>=5.9.0

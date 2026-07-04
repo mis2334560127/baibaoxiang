@@ -13,11 +13,22 @@ from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 
 from src.modules.pdf_converter import (
     detect_pdf_type, get_pdf_page_count,
-    check_ocr_chinese_available, get_available_ocr_languages,
+    check_paddleocr_available, get_ocr_languages,
 )
 from src.worker_threads import ConvertWorker
 from src.config import AppConfig, get_config
 from src.signals import bus
+
+
+_OCR_LANG_LABELS = {
+    "ch": "中文（简体/繁体/英文）",
+    "en": "英文",
+    "chinese_cht": "中文繁体",
+    "japan": "日文",
+    "korean": "韩文",
+    "french": "法文",
+    "german": "德文",
+}
 
 
 class PdfWordPage(QWidget):
@@ -78,15 +89,47 @@ class PdfWordPage(QWidget):
 
         # 转换选项
         opts = QHBoxLayout()
+
         self.chk_format = QCheckBox("保留原始格式（推荐）")
         self.chk_format.setChecked(self._config.pdf_preserve_formatting)
+        self.chk_format.setToolTip(
+            "【pdf2docx 模式生效】\n"
+            "勾选：尽可能保留原 PDF 的字体、字号、颜色、段落样式和对齐方式\n"
+            "不勾选：仅提取文字内容，使用 Word 默认样式排版\n"
+            "注意：仅对文字型 PDF 有效，扫描型 PDF 不受此选项影响"
+        )
+
         self.chk_images = QCheckBox("保留图片")
         self.chk_images.setChecked(self._config.pdf_preserve_images)
+        self.chk_images.setToolTip(
+            "【pdf2docx 模式生效】\n"
+            "勾选：将 PDF 中的图片提取到 images 子文件夹，并嵌入 Word 文档\n"
+            "不勾选：忽略 PDF 中的图片，只转换文字内容\n"
+            "注意：仅对文字型 PDF 有效，扫描型 PDF 不受此选项影响"
+        )
+
         self.chk_force_ocr = QCheckBox("强制 OCR 识别")
-        self.chk_force_ocr.setToolTip("即使 PDF 包含文字层也使用 OCR 方式识别")
+        self.chk_force_ocr.setToolTip(
+            "【OCR 模式】\n"
+            "勾选：无论 PDF 是否包含文字层，一律渲染为图片后用 Tesseract OCR 识别\n"
+            "不勾选：自动检测 PDF 类型，文字型用 pdf2docx 直接转换，扫描型才用 OCR\n"
+            "适用场景：混合型 PDF（部分页无文字层）、排版复杂导致 pdf2docx 效果不佳"
+        )
+
+        self.chk_layout = QCheckBox("保留格式排版")
+        self.chk_layout.setToolTip(
+            "【OCR 模式生效】\n"
+            "勾选：对 OCR 识别结果进行排版分析（分栏检测、表格识别、段落归类、\n"
+            "　　　标题/正文字号区分、粗体斜体保留、对齐方式还原）\n"
+            "不勾选：纯文本提取模式，逐页 OCR 识别文字后直接输出，不做排版处理\n"
+            "　　　速度更快，适合只需提取文字内容的场景"
+        )
+        self.chk_layout.setChecked(True)
+
         opts.addWidget(self.chk_format)
         opts.addWidget(self.chk_images)
         opts.addWidget(self.chk_force_ocr)
+        opts.addWidget(self.chk_layout)
         opts.addStretch()
         layout.addLayout(opts)
 
@@ -109,7 +152,7 @@ class PdfWordPage(QWidget):
         self._refresh_ocr_languages()
 
         # 提示
-        hint = QLabel("💡 转换后的 .docx 文件将保存到桌面「百宝箱输出」文件夹\n💡 扫描型 PDF 使用 OCR 识别时需安装 Tesseract（见设置页「使用指南」）\n💡 OCR 模式现已支持保留段落排版、对齐方式和字号大小")
+        hint = QLabel("💡 转换后的 .docx 文件将保存到桌面「百宝箱输出」文件夹\n💡 扫描型 PDF 使用 PaddleOCR 深度学习引擎识别中文\n💡 取消「保留格式排版」可跳过排版分析，仅提取纯文字，速度更快")
         hint.setStyleSheet("color: #94A3B8; font-size: 12px;")
         layout.addWidget(hint)
 
@@ -201,24 +244,22 @@ class PdfWordPage(QWidget):
 
     def _refresh_ocr_languages(self):
         """刷新 OCR 语言列表和状态提示"""
-        has_cn, msg = check_ocr_chinese_available()
-        langs = get_available_ocr_languages()
+        available, msg = check_paddleocr_available()
+        langs = get_ocr_languages()
 
-        # 更新下拉框
+        # 更新下拉框：显示中文标签，data 保存实际语言代码
         self.cmb_ocr_lang.clear()
         if langs:
-            self.cmb_ocr_lang.addItems(langs)
-            # 上次使用的语言优先
-            saved_lang = self._config.pdf_ocr_lang if hasattr(self._config, 'pdf_ocr_lang') else "chi_sim+eng"
-            if saved_lang in langs:
-                self.cmb_ocr_lang.setCurrentText(saved_lang)
-            elif "chi_sim" in langs:
-                self.cmb_ocr_lang.setCurrentText("chi_sim")
+            for lang in langs:
+                label = _OCR_LANG_LABELS.get(lang, lang)
+                self.cmb_ocr_lang.addItem(label, userData=lang)
+            saved_lang = self._config.pdf_ocr_lang if hasattr(self._config, 'pdf_ocr_lang') else "ch"
+            self._set_ocr_lang_by_code(saved_lang)
         else:
-            self.cmb_ocr_lang.addItem("eng")
+            self.cmb_ocr_lang.addItem(_OCR_LANG_LABELS.get("ch", "ch"), userData="ch")
 
-        # 中文语言包缺失时显示警告
-        if not has_cn:
+        # PaddleOCR 不可用时显示警告
+        if not available:
             self.ocr_warning.setText(f"⚠️ {msg}")
             self.ocr_warning.setStyleSheet(
                 "color: #FF9800; background: #FFF3E0; border: 1px solid #FFE0B2; "
@@ -227,6 +268,18 @@ class PdfWordPage(QWidget):
             self.ocr_warning.setVisible(True)
         else:
             self.ocr_warning.setVisible(False)
+
+    def _set_ocr_lang_by_code(self, lang_code: str):
+        """根据语言代码设置下拉框当前选中项"""
+        for i in range(self.cmb_ocr_lang.count()):
+            if self.cmb_ocr_lang.itemData(i) == lang_code:
+                self.cmb_ocr_lang.setCurrentIndex(i)
+                return
+        # 回退到默认中文
+        for i in range(self.cmb_ocr_lang.count()):
+            if self.cmb_ocr_lang.itemData(i) == "ch":
+                self.cmb_ocr_lang.setCurrentIndex(i)
+                return
 
     def _on_drop_clicked(self, e):
         self._add_files()
@@ -246,7 +299,7 @@ class PdfWordPage(QWidget):
         if not self._files or (self._worker and self._worker.isRunning()):
             return
 
-        ocr_lang = self.cmb_ocr_lang.currentText() or "chi_sim+eng"
+        ocr_lang = self.cmb_ocr_lang.currentData() or "ch"
 
         self._worker = ConvertWorker(
             files=self._files.copy(),
@@ -255,6 +308,7 @@ class PdfWordPage(QWidget):
             output_dir=self._config.get_output_dir(),
             force_ocr=self.chk_force_ocr.isChecked(),
             ocr_lang=ocr_lang,
+            preserve_layout=self.chk_layout.isChecked(),
         )
 
         # 持久化

@@ -20,15 +20,17 @@ from src.pages.pdf_word_page import PdfWordPage
 from src.pages.recorder_page import RecorderPage
 from src.pages.guide_page import GuidePage
 from src.pages.settings_page import SettingsPage
+from src.pages.excel_merge_page import ExcelMergePage
 
 # 侧边栏导航项配置
 NAV_ITEMS = [
-    {"id": "home",      "icon": "🏠", "label": "首页总览",   "tip": "使用统计与快捷入口"},
-    {"id": "compress",  "icon": "📷", "label": "图片压缩",   "tip": "批量压缩图片，支持按大小/质量"},
-    {"id": "pdf2word",  "icon": "📄", "label": "PDF 转 Word","tip": "将 PDF 文档转换为可编辑 Word"},
-    {"id": "recorder",  "icon": "🎬", "label": "屏幕录制",   "tip": "全屏/区域录制，输出 MP4"},
-    {"id": "guide",     "icon": "📖", "label": "使用指南",   "tip": "安装步骤、操作说明、常见问题"},
-    {"id": "settings",  "icon": "⚙️", "label": "系统设置",  "tip": "主题、路径、广告位配置"},
+    {"id": "home",         "icon": "🏠", "label": "首页总览",     "tip": "使用统计与快捷入口"},
+    {"id": "compress",     "icon": "📷", "label": "图片压缩",     "tip": "批量压缩图片，支持按大小/质量"},
+    {"id": "pdf2word",     "icon": "📄", "label": "PDF 转 Word",  "tip": "将 PDF 文档转换为可编辑 Word"},
+    {"id": "recorder",     "icon": "🎬", "label": "屏幕录制",     "tip": "全屏/区域录制，输出 MP4"},
+    {"id": "excel_merge",  "icon": "📊", "label": "Excel 合并",   "tip": "批量解压压缩包并合并 Excel 数据"},
+    {"id": "guide",        "icon": "📖", "label": "使用指南",     "tip": "安装步骤、操作说明、常见问题"},
+    {"id": "settings",     "icon": "⚙️", "label": "系统设置",    "tip": "主题、路径、广告位配置"},
 ]
 
 
@@ -184,6 +186,7 @@ class MainWindow(QMainWindow):
         self._pages["compress"] = CompressPage()
         self._pages["pdf2word"] = PdfWordPage()
         self._pages["recorder"] = RecorderPage()
+        self._pages["excel_merge"] = ExcelMergePage()
         self._pages["guide"] = GuidePage()
         self._pages["settings"] = SettingsPage()
 

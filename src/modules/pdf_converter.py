@@ -2,7 +2,7 @@
 PDF 转 Word 模块
 支持两种模式：
 1. 数字型 PDF（文字可选层）→ pdf2docx 直接转换
-2. 扫描型 PDF（图片）→ PyMuPDF 渲染 + pytesseract OCR 识别
+2. 扫描型 PDF（图片）→ PyMuPDF 渲染 + PaddleOCR 识别
 """
 import os
 import io
@@ -49,12 +49,13 @@ def convert_pdf_to_docx(
     preserve_formatting: bool = True,
     preserve_images: bool = True,
     force_ocr: bool = False,
-    ocr_lang: str = "chi_sim+eng",
+    ocr_lang: str = "ch",
+    pure_ocr: bool = False,
     progress_callback: callable = None,
 ) -> str:
     """
     将 PDF 转换为 Word (.docx) 文档。
-    自动检测 PDF 类型，扫描型使用 OCR（保留排版），文字型使用 pdf2docx。
+    自动检测 PDF 类型，扫描型使用 PaddleOCR（保留排版），文字型使用 pdf2docx。
 
     Args:
         file_path:             PDF 文件路径
@@ -62,7 +63,8 @@ def convert_pdf_to_docx(
         preserve_formatting:   保留原始格式（仅 pdf2docx 模式生效）
         preserve_images:       保留图片（仅 pdf2docx 模式生效）
         force_ocr:             强制使用 OCR（即使检测为文字型）
-        ocr_lang:              OCR 识别语言（如 "chi_sim+eng"）
+        ocr_lang:              OCR 识别语言（默认 "ch"，可选 "en" 等）
+        pure_ocr:              纯 OCR 文字识别（不处理排版，直接 output 纯文本）
         progress_callback:     页级进度回调 callable(current_page, total_pages)，可为 None
 
     Returns:
@@ -78,15 +80,17 @@ def convert_pdf_to_docx(
     base = os.path.splitext(os.path.basename(file_path))[0]
     out_dir = output_dir or os.path.dirname(file_path)
     out_dir = _ensure_writable_dir(out_dir)
-    out_path = os.path.join(out_dir, f"{base}.docx")
+    out_path = _resolve_unique_output_path(out_dir, base)
 
     # 检测 PDF 类型
     pdf_type, text_pages, total_pages = detect_pdf_type(file_path)
 
-    # 解析实际可用的 OCR 语言
-    actual_lang = _resolve_ocr_lang(ocr_lang)
-
-    if not force_ocr and pdf_type == "text":
+    if pure_ocr:
+        # 纯 OCR 模式：逐页识别文字，不做排版处理
+        return _convert_with_pure_ocr(
+            file_path, out_path, progress_callback=progress_callback, lang=ocr_lang,
+        )
+    elif not force_ocr and pdf_type == "text":
         # 文字型：使用 pdf2docx 直接转换
         return _convert_with_pdf2docx(
             file_path, out_path, out_dir,
@@ -98,7 +102,7 @@ def convert_pdf_to_docx(
         return _convert_with_ocr(
             file_path, out_path,
             pdf_type=pdf_type, text_pages=text_pages,
-            lang=actual_lang, progress_callback=progress_callback,
+            lang=ocr_lang, progress_callback=progress_callback,
         )
 
 
@@ -190,13 +194,22 @@ def _post_process_docx_formatting(docx_path: str):
                     if is_heading and fs_pt < 9:
                         run.font.size = Pt(10.5)
 
-                # 中文字体设置
-                if is_heading:
-                    run.font.name = 'SimHei'
-                    _set_east_asian_font(run, 'SimHei')
-                else:
-                    run.font.name = 'SimSun'
-                    _set_east_asian_font(run, 'SimSun')
+                # 统一字体：全文 SimSun，不区分标题/正文
+                run.font.name = 'SimSun'
+                _set_east_asian_font(run, 'SimSun')
+
+                # 清除加粗（pdf2docx 可能引入不一致的加粗）
+                run.font.bold = None
+
+                # 清除文字颜色（Word 标题样式可能自带颜色）
+                try:
+                    rpr = run._element.get_or_add_rPr()
+                    for color_tag in [qn('w:color'), qn('w14:color')]:
+                        el = rpr.find(color_tag)
+                        if el is not None:
+                            rpr.remove(el)
+                except Exception:
+                    pass
 
                 # 清除可能存在的无效字体回退
                 try:
@@ -271,167 +284,191 @@ def _ensure_writable_dir(dir_path: str) -> str:
     return fallback
 
 
-def _find_tesseract() -> str | None:
+def _resolve_unique_output_path(out_dir: str, base: str) -> str:
     """
-    自动查找 Tesseract 可执行文件。
-    依次检查：PATH 环境变量 → 常见安装路径 → 注册表
-    找到后配置 pytesseract.pytesseract.tesseract_cmd。
+    生成一个可写入的输出路径。
+    当目标文件被其他程序（如 Word / WPS）占用时，自动追加序号/时间戳避免覆盖。
     """
-    import sys
-    import shutil
-    import subprocess as subprocess_module
+    ext = ".docx"
+    candidate = os.path.join(out_dir, f"{base}{ext}")
 
-    # 1. 先尝试 PATH 中的 tesseract
-    tesseract_in_path = shutil.which("tesseract")
-    if tesseract_in_path:
-        return tesseract_in_path
+    # 如果文件不存在，直接返回
+    if not os.path.exists(candidate):
+        return candidate
 
-    # 2. 常见安装路径
-    common_paths = [
-        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-        os.path.expandvars(r"%LOCALAPPDATA%\Tesseract-OCR\tesseract.exe"),
-        os.path.expandvars(r"%ProgramFiles%\Tesseract-OCR\tesseract.exe"),
-        os.path.expandvars(r"%ProgramFiles(x86)%\Tesseract-OCR\tesseract.exe"),
-    ]
-    for path in common_paths:
-        if os.path.isfile(path):
-            return path
-
-    # 3. 尝试通过注册表查找（Windows）
-    if sys.platform == "win32":
-        try:
-            import winreg
-            for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
-                for subkey in (
-                    r"SOFTWARE\Tesseract-OCR",
-                    r"SOFTWARE\WOW6432Node\Tesseract-OCR",
-                ):
-                    try:
-                        key = winreg.OpenKey(root, subkey)
-                        install_dir, _ = winreg.QueryValueEx(key, "InstallDir")
-                        winreg.CloseKey(key)
-                        tesseract_path = os.path.join(install_dir, "tesseract.exe")
-                        if os.path.isfile(tesseract_path):
-                            return tesseract_path
-                    except OSError:
-                        pass
-        except Exception:
-            pass
-
-    return None
-
-
-_TESSERACT_AVAILABLE_LANGS: list[str] | None = None
-_TESSERACT_SETUP_DONE: bool = False
-
-
-def _setup_tesseract():
-    """配置 pytesseract 的 tesseract_cmd 路径（带状态跟踪）"""
-    global _TESSERACT_SETUP_DONE
-    if _TESSERACT_SETUP_DONE:
-        return
-
-    import pytesseract
+    # 尝试以写模式打开原文件，测试是否被占用
     try:
-        pytesseract.get_tesseract_version()
-        _TESSERACT_SETUP_DONE = True
-        return
-    except Exception:
+        with open(candidate, "a+b"):
+            pass
+        return candidate
+    except (PermissionError, OSError):
         pass
 
-    tesseract_path = _find_tesseract()
-    if tesseract_path:
-        pytesseract.pytesseract.tesseract_cmd = tesseract_path
-        _TESSERACT_SETUP_DONE = True
-    else:
-        raise RuntimeError(
-            "未找到 Tesseract OCR 引擎。请从以下地址下载安装：\n"
-            "https://github.com/UB-Mannheim/tesseract/wiki\n"
-            "安装时请勾选中文简体语言包 (chi_sim)"
-        )
+    # 文件被占用：生成带时间戳的新文件名
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    candidate = os.path.join(out_dir, f"{base}_{timestamp}{ext}")
+    if not os.path.exists(candidate):
+        return candidate
+
+    # 极端情况：连时间戳文件也存在，追加序号
+    counter = 1
+    while True:
+        candidate = os.path.join(out_dir, f"{base}_{timestamp}_{counter}{ext}")
+        if not os.path.exists(candidate):
+            return candidate
+        counter += 1
 
 
-def get_available_ocr_languages() -> list[str]:
-    """获取 Tesseract 已安装的语言列表（不含 osd/equ 等非语言项）"""
-    global _TESSERACT_AVAILABLE_LANGS
-    if _TESSERACT_AVAILABLE_LANGS is not None:
-        return _TESSERACT_AVAILABLE_LANGS
+_PADDLEOCR_INSTANCE = None
+_PADDLEOCR_LANG = None
+
+
+class _PaddleOCRError(RuntimeError):
+    """PaddleOCR 未安装或初始化失败的异常"""
+
+
+def _init_paddleocr(lang: str = "ch"):
+    """初始化 PaddleOCR（全局单例，按语言缓存），兼容不同版本参数差异"""
+    global _PADDLEOCR_INSTANCE, _PADDLEOCR_LANG
+
+    if _PADDLEOCR_INSTANCE is not None and _PADDLEOCR_LANG == lang:
+        return _PADDLEOCR_INSTANCE
 
     try:
-        _setup_tesseract()
-        import pytesseract
-        all_langs = pytesseract.get_languages()
-        _TESSERACT_AVAILABLE_LANGS = [
-            l for l in all_langs if l not in ('osd', 'equ')
-        ]
-        return _TESSERACT_AVAILABLE_LANGS
-    except Exception:
-        _TESSERACT_AVAILABLE_LANGS = []
-        return []
-
-
-def _resolve_ocr_lang(requested: str) -> str:
-    """
-    解析 OCR 语言参数，自动回退到可用语言。
-
-    Args:
-        requested: 请求的语言字符串，如 "chi_sim+eng"
-
-    Returns:
-        实际可用的语言字符串
-    """
-    available = get_available_ocr_languages()
-    if not available:
-        return "eng"
-
-    requested_parts = requested.split("+")
-    resolved = [lang for lang in requested_parts if lang in available]
-
-    if not resolved:
-        resolved = [available[0]]
-
-    result = "+".join(resolved)
-    if result != requested:
-        print(f"[OCR] 请求语言 '{requested}' 部分不可用，回退为: '{result}'")
-    return result
-
-
-def check_ocr_chinese_available() -> tuple[bool, str]:
-    """
-    检查 Tesseract 中文语言包是否可用。
-
-    Returns:
-        (has_chinese, message)
-    """
-    available = get_available_ocr_languages()
-    has_chi_sim = "chi_sim" in available
-    has_chi_tra = "chi_tra" in available
-
-    if has_chi_sim:
-        return True, "简体中文语言包已就绪 ✓"
-    elif has_chi_tra:
-        return True, "繁体中文语言包可用（建议安装简体中文）"
-    else:
-        return False, (
-            "⚠️ 未检测到中文 OCR 语言包！\n"
-            "请下载 chi_sim.traineddata 并放入 Tesseract 的 tessdata 目录：\n"
-            "1. 打开 https://github.com/tesseract-ocr/tessdata/raw/main/chi_sim.traineddata\n"
-            "2. 将下载的文件放入 Tesseract 安装目录下的 tessdata 文件夹\n"
-            "例如：D:\\OCREXE\\tessdata\\chi_sim.traineddata"
+        import inspect
+        from paddleocr import PaddleOCR
+    except ImportError:
+        raise _PaddleOCRError(
+            "PaddleOCR 未安装。请运行：\n"
+            "pip install paddlepaddle paddleocr\n"
+            "首次使用会自动下载中文识别模型（约 100MB），请保持网络连接。"
         )
 
 
-def _convert_with_ocr(
+    # 根据当前 PaddleOCR 版本支持的参数动态构建 kwargs
+    sig = inspect.signature(PaddleOCR.__init__)
+    supported = set(sig.parameters.keys())
+
+    kwargs: dict[str, object] = {"lang": lang}
+    if "show_log" in supported:
+        kwargs["show_log"] = False
+    if "use_angle_cls" in supported:
+        kwargs["use_angle_cls"] = True
+    if "use_gpu" in supported:
+        kwargs["use_gpu"] = False
+
+    try:
+        _PADDLEOCR_INSTANCE = PaddleOCR(**kwargs)
+        _PADDLEOCR_LANG = lang
+        return _PADDLEOCR_INSTANCE
+    except Exception as e:
+        raise _PaddleOCRError(f"PaddleOCR 初始化失败: {e}")
+
+
+def _parse_paddleocr_result(result) -> list[tuple[str, list, float]]:
+    """
+    统一解析 PaddleOCR 不同版本的返回格式。
+
+    支持格式：
+    1. PaddleOCR 2.x: [[ [box], (text, conf) ], ...]
+    2. PaddleOCR 2.x 变体: [[ [box], text, conf ], ...]
+    3. PaddleOCR 3.x batch: [{ "dt_polys": [...], "rec_text": [...], "rec_score": [...] }, ...]
+    4. PaddleOCR 3.x single: { "dt_polys": ..., "rec_text": ..., "rec_score": ... }
+
+    Returns:
+        [(text, bbox, conf), ...]
+    """
+    lines: list[tuple[str, list, float]] = []
+
+    if not result:
+        return lines
+
+    # 3.x 单结果字典或对象
+    if isinstance(result, dict) or hasattr(result, "dt_polys"):
+        result = [result]
+
+    # 3.x batch：每个元素是字典或类似对象
+    if result and (isinstance(result[0], dict) or hasattr(result[0], "dt_polys")):
+        for item in result:
+            polys = item.get("dt_polys", []) if isinstance(item, dict) else getattr(item, "dt_polys", [])
+            texts = item.get("rec_text", []) if isinstance(item, dict) else getattr(item, "rec_text", [])
+            scores = item.get("rec_score", []) if isinstance(item, dict) else getattr(item, "rec_score", [])
+            for poly, text, score in zip(polys, texts, scores):
+                if text is None:
+                    continue
+                lines.append((str(text), poly, float(score) if isinstance(score, (int, float)) else 0.9))
+        return lines
+
+    # 2.x 格式
+    page_result = result[0] if result else None
+    if page_result is None:
+        return lines
+
+    for line_info in page_result:
+        if not isinstance(line_info, (list, tuple)) or len(line_info) < 2:
+            continue
+
+        bbox = line_info[0]
+        rec_info = line_info[1]
+
+        if isinstance(rec_info, (list, tuple)) and len(rec_info) >= 2:
+            text = rec_info[0]
+            conf = rec_info[1]
+        else:
+            # 变体：[bbox, text, conf]
+            if len(line_info) >= 3:
+                text = line_info[1]
+                conf = line_info[2]
+            else:
+                continue
+
+        if text is None:
+            continue
+        lines.append((str(text), bbox, float(conf) if isinstance(conf, (int, float)) else 0.9))
+
+    return lines
+
+
+def _run_ocr(ocr, img_array):
+    """
+    调用 PaddleOCR 进行识别，兼容 2.x（ocr）和 3.x（predict）。
+    PaddleOCR 3.x 已弃用 ocr()，优先使用 predict()。
+    """
+    if hasattr(ocr, "predict"):
+        return ocr.predict(img_array)
+    return ocr.ocr(img_array)
+
+
+def check_paddleocr_available() -> tuple[bool, str]:
+    """
+    检查 PaddleOCR 是否可用。
+
+    Returns:
+        (available, message)
+    """
+    try:
+        _init_paddleocr("ch")
+        return True, "PaddleOCR 中文识别已就绪 ✓"
+    except _PaddleOCRError as e:
+        return False, str(e)
+    except Exception as e:
+        return False, f"PaddleOCR 不可用: {e}"
+
+
+def get_ocr_languages() -> list[str]:
+    """获取可用的 OCR 语言列表（PaddleOCR 支持的语言代码）"""
+    return ["ch", "en", "chinese_cht", "japan", "korean", "french", "german"]
+
+
+def _convert_with_pure_ocr(
     file_path: str, out_path: str,
-    pdf_type: str = "scanned", text_pages: int = 0,
-    dpi: int = 300, lang: str = "chi_sim+eng",
+    dpi: int = 400, lang: str = "ch",
     progress_callback: callable = None,
 ) -> str:
     """
-    使用 OCR 转换扫描型 PDF。
-    使用 image_to_data 获取词级位置数据，重建段落、对齐和字号排版。
-    包含图片预处理（增强对比度、降噪）以提升识别准确率。
+    纯 OCR 文字识别模式：逐页渲染 PDF → PaddleOCR 识别 → 写入 Word。
+    不进行任何排版分析（无分栏、无表格、无段落/标题分类），速度更快。
     """
     def _report(page: int, total: int):
         if progress_callback:
@@ -442,74 +479,57 @@ def _convert_with_ocr(
 
     try:
         import fitz
-        from PIL import Image, ImageFilter, ImageEnhance
+        from PIL import Image
         from docx import Document
-        from docx.shared import Pt, Inches, RGBColor
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.shared import Pt
     except ImportError as e:
-        raise ImportError(f"OCR 转换缺少依赖: {e}")
+        raise ImportError(f"纯 OCR 转换缺少依赖: {e}")
 
-    try:
-        import pytesseract
-    except ImportError:
-        raise ImportError(
-            "pytesseract 未安装。请运行: pip install pytesseract\n"
-            "同时需要安装 Tesseract OCR 引擎: https://github.com/UB-Mannheim/tesseract/wiki"
-        )
-
-    _setup_tesseract()
-
-    # 构建 Tesseract 自定义配置
-    # --psm 3: 全自动页面分割（比 psm 6 更适合复杂布局）
-    # --psm 4: 备选，假设单列可变大小文本
-    # -c tessedit_write_images=false: 不写调试图片
-    # -c textord_heavy_nr=1: 增强降噪（适合扫描件）
-    tesseract_config = "--psm 3 -c tessedit_write_images=false -c textord_heavy_nr=1"
+    ocr = _init_paddleocr(lang)
 
     doc = fitz.open(file_path)
     total = doc.page_count
 
     docx = Document()
-
-    # 设置默认样式
     style = docx.styles['Normal']
     style.font.name = 'SimSun'
     style.font.size = Pt(10.5)
-    # 设置中文字体回退
     style.element.rPr.rFonts.set(
         '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia', 'SimSun'
     )
 
     for i in range(total):
-        _report(i + 1, total)  # 页级进度
+        _report(i + 1, total)
         page = doc[i]
 
-        # 混合型 PDF：有文字层的页直接提取文字
-        page_text = page.get_text().strip()
-        if pdf_type == "mixed" and page_text:
-            docx.add_paragraph(page_text)
-        else:
-            # 渲染页面为高 DPI 图片
-            pix = page.get_pixmap(dpi=dpi)
-            img_data = pix.tobytes("png")
-            img = Image.open(io.BytesIO(img_data))
-            img_width, img_height = img.size
+        # 渲染页面为图片
+        pix = page.get_pixmap(dpi=dpi)
+        img_data = pix.tobytes("png")
+        img = Image.open(io.BytesIO(img_data))
 
-            # ---- 图片预处理：提升 OCR 识别准确率 ----
-            img = _preprocess_for_ocr(img)
+        # 图片预处理
+        img = _preprocess_for_ocr(img)
 
-            try:
-                # 使用 image_to_data 获取结构化位置数据（含自定义配置）
-                data = pytesseract.image_to_data(
-                    img, lang=lang,
-                    output_type=pytesseract.Output.DICT,
-                    config=tesseract_config,
-                )
-            except pytesseract.TesseractError as e:
-                raise RuntimeError(f"OCR 识别失败 (第{i+1}页): {str(e)}")
+        # PaddleOCR 识别（3.x 需要三通道输入）
+        import numpy as np
+        img_array = np.array(img.convert('RGB'))
+        try:
+            result = _run_ocr(ocr, img_array)
+        except Exception as e:
+            raise RuntimeError(f"OCR 识别失败 (第{i+1}页): {str(e)}")
 
-            # 从位置数据重建排版
-            _build_docx_page_from_ocr(docx, data, img_width, img_height, dpi)
+        parsed = _parse_paddleocr_result(result)
+        if not parsed:
+            p = docx.add_paragraph("[此页未识别到文字内容]")
+            p.add_run("").italic = True
+            if i < total - 1:
+                docx.add_page_break()
+            continue
+
+        # 按行输出，每行一个 Word 段落
+        for text, _bbox, conf in parsed:
+            if text and conf > 0.5:
+                docx.add_paragraph(text.strip())
 
         # 页间分隔
         if i < total - 1:
@@ -524,300 +544,499 @@ def _convert_with_ocr(
     return out_path
 
 
-def _preprocess_for_ocr(img, enhance: bool = True) -> "Image.Image":
+def _convert_with_ocr(
+    file_path: str, out_path: str,
+    pdf_type: str = "scanned", text_pages: int = 0,
+    dpi: int = 400, lang: str = "ch",
+    progress_callback: callable = None,
+) -> str:
     """
-    对渲染图片进行预处理以提升 OCR 准确率。
+    使用 PaddleOCR 转换扫描型 PDF。
+    PaddleOCR 返回行级文字 + 坐标，用于重建段落排版。
+    包含图片预处理（歪斜校正、自适应二值化）以提升识别准确率。
+    """
+    def _report(page: int, total: int):
+        if progress_callback:
+            try:
+                progress_callback(page, total)
+            except Exception:
+                pass
 
-    策略（改进版）：
-    1. 灰度化 + 自适应对比度拉伸（保留 256 级灰度供 Tesseract 内部阈值）
-    2. 非锐化掩模 (Unsharp Mask) 替代简单 SHARPEN（边缘更自然）
-    3. 检测低对比度页面 → 额外 CLAHE 均衡化
+    try:
+        import fitz
+        from PIL import Image
+        from docx import Document
+        from docx.shared import Pt
+    except ImportError as e:
+        raise ImportError(f"OCR 转换缺少依赖: {e}")
+
+    import numpy as np
+
+    ocr = _init_paddleocr(lang)
+
+    doc = fitz.open(file_path)
+    total = doc.page_count
+
+    docx = Document()
+    # 设置默认样式
+    style = docx.styles['Normal']
+    style.font.name = 'SimSun'
+    style.font.size = Pt(10.5)
+    style.element.rPr.rFonts.set(
+        '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia', 'SimSun'
+    )
+
+    for i in range(total):
+        _report(i + 1, total)
+        page = doc[i]
+
+        # 混合型 PDF：有文字层的页直接提取文字
+        page_text = page.get_text().strip()
+        if pdf_type == "mixed" and page_text:
+            docx.add_paragraph(page_text)
+        else:
+            # 渲染页面为高 DPI 图片
+            pix = page.get_pixmap(dpi=dpi)
+            img_data = pix.tobytes("png")
+            img = Image.open(io.BytesIO(img_data))
+            img_width, img_height = img.size
+
+            # ---- 图片预处理：歪斜校正 + 自适应二值化 ----
+            img = _preprocess_for_ocr(img, dpi=dpi)
+
+            # ---- OCR 前版面分析：投影法检测栏目 ----
+            col_count, col_boxes = _detect_page_columns_from_image(img)
+
+            # PaddleOCR 对整页识别（3.x 需要三通道输入）
+            img_array = np.array(img.convert('RGB'))
+            try:
+                result = _run_ocr(ocr, img_array)
+            except Exception as e:
+                raise RuntimeError(f"OCR 识别失败 (第{i+1}页): {str(e)}")
+
+            parsed = _parse_paddleocr_result(result)
+            if not parsed:
+                p = docx.add_paragraph("[此页未识别到文字内容]")
+                from docx.enum.text import WD_ALIGN_PARAGRAPH
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p.add_run("")
+                run.italic = True
+                if i < total - 1:
+                    docx.add_page_break()
+                continue
+
+            # ── 将 PaddleOCR 行级结果转为 word 格式 ──
+            # 转换为: (text, left, top, width, height, block_num, line_num, col_idx)
+            all_words = []
+            for line_idx, (text, bbox, conf) in enumerate(parsed):
+                if not text or not text.strip():
+                    continue
+                if conf < 0.5:
+                    continue
+
+                xs = [p[0] for p in bbox]
+                ys = [p[1] for p in bbox]
+                left = int(min(xs))
+                top = int(min(ys))
+                w = int(max(xs) - min(xs))
+                h = int(max(ys) - min(ys))
+                # 每行作为一个"词"（整行文本），block_num=0, line_num=顺序号
+                all_words.append((text.strip(), left, top, w, h, 0, line_idx, 0))
+
+            if not all_words:
+                if i < total - 1:
+                    docx.add_page_break()
+                continue
+
+            # ---- 按栏目分组并重建排版 ----
+            if col_count == 1:
+                col_words = [
+                    (t, l, top, wd, ht, bn, ln)
+                    for t, l, top, wd, ht, bn, ln, ci in all_words
+                ]
+                _build_column_from_ocr(docx, col_words, img_width, img_height, dpi)
+            else:
+                for ci in range(col_count):
+                    cx0, cx1 = col_boxes[ci]
+                    col_words = [
+                        (t, l - cx0, top, wd, ht, bn, ln)
+                        for t, l, top, wd, ht, bn, ln, _ in all_words
+                        if cx0 <= l + wd / 2 <= cx1
+                    ]
+                    if col_words:
+                        _build_column_from_ocr(docx, col_words, cx1 - cx0, img_height, dpi)
+
+        # 页间分隔
+        if i < total - 1:
+            docx.add_page_break()
+
+    doc.close()
+    docx.save(out_path)
+
+    if not os.path.exists(out_path):
+        raise RuntimeError("输出文件未生成")
+
+    return out_path
+
+
+def _deskew_image(img_array: "np.ndarray") -> "np.ndarray":
+    """
+    检测并校正扫描图片的歪斜角度。
+
+    策略（WPS 级别）：
+    1. Canny 边缘检测 → 霍夫概率直线检测
+    2. 过滤：只取水平线（角度在 ±5° 内），排除短线（< img_width * 5%）
+    3. 取角度中位数 → 仿射变换校正
+    """
+    import numpy as np
+    try:
+        import cv2
+    except ImportError:
+        return img_array
+
+    h, w = img_array.shape[:2]
+    h_float = float(h)
+    w_float = float(w)
+
+    # 灰度化
+    if len(img_array.shape) == 3:
+        gray = cv2.cvtColor(img_array, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = img_array.copy()
+
+    # Canny 边缘检测
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+
+    # 霍夫概率直线检测
+    lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi / 180,
+                            threshold=int(w_float * 0.08),
+                            minLineLength=int(w_float * 0.05),
+                            maxLineGap=int(w_float * 0.02))
+    if lines is None or len(lines) < 3:
+        return img_array
+
+    # 收集角度（兼容 OpenCV 不同版本的 lines shape）
+    angles = []
+    for line in lines:
+        coords = line[0] if line.ndim > 1 and line.shape[0] == 1 else line
+        x1, y1, x2, y2 = coords
+        if abs(x2 - x1) < 5:
+            continue  # 垂直线跳过
+        angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+        if abs(angle) < 5:
+            angles.append(angle)
+
+    if len(angles) < 3:
+        return img_array
+
+    # 中位数角度
+    median_angle = float(np.median(angles))
+    if abs(median_angle) < 0.15:
+        return img_array  # 很正，不需要校正
+
+    # 仿射变换校正
+    center = (w_float / 2, h_float / 2)
+    matrix = cv2.getRotationMatrix2D(center, median_angle, 1.0)
+    rotated = cv2.warpAffine(gray if len(img_array.shape) == 2 else img_array,
+                              matrix, (w, h),
+                              flags=cv2.INTER_CUBIC,
+                              borderMode=cv2.BORDER_CONSTANT,
+                              borderValue=(255, 255, 255))
+    return rotated
+
+
+def _adaptive_binarize(img_array: "np.ndarray") -> "np.ndarray":
+    """
+    自适应局部二值化（替代全局 Otsu）。
+
+    对扫描件的关键优势：
+    - 光照不均区域（页面边缘阴影）仍能正确二值化
+    - 中文笔画不会被全局阈值一刀切
+    - blockSize=31（约 0.5~1 个中文字大小）与 C=8 适合印刷体
+    """
+    import numpy as np
+    try:
+        import cv2
+    except ImportError:
+        # 回退到简单阈值
+        _, binary = cv2.threshold(img_array, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        return binary
+
+    # 先轻度高斯去噪
+    denoised = cv2.GaussianBlur(img_array, (3, 3), 0)
+
+    # 自适应高斯阈值
+    binary = cv2.adaptiveThreshold(
+        denoised, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        blockSize=31,
+        C=8,
+    )
+    return binary
+
+
+def _preprocess_for_ocr(img, enhance: bool = True, dpi: int = 400) -> "Image.Image":
+    """
+    WPS 级别的 OCR 预处理流水线。
+
+    策略：
+    1. 灰度化
+    2. 歪斜检测 + 校正（霍夫直线法）
+    3. 双边滤波去噪（保留边缘，去除扫描噪声）
+    4. 自适应局部二值化（替代全局 Otsu，处理光照不均）
+    5. 形态学膨胀（修复断裂笔画，不破坏字间距）
+    6. 轻度锐化边缘
+
     尺寸不变，坐标不变。
     """
-    from PIL import Image, ImageFilter, ImageOps
+    import numpy as np
+    try:
+        import cv2
+        HAS_CV2 = True
+    except ImportError:
+        HAS_CV2 = False
+
+    from PIL import Image, ImageFilter, ImageOps, ImageMath
 
     if not enhance:
         if img.mode != 'L':
             img = img.convert('L')
-        return img
+        return img.convert('RGB')
 
     # 1. 转灰度
     if img.mode != 'L':
         img = img.convert('L')
 
-    # 2. 对比度增强：拉伸直方图剪掉 2% 的极端值
-    img = ImageOps.autocontrast(img, cutoff=2)
+    if not HAS_CV2:
+        # 回退到旧版 PIL 纯处理
+        img = img.filter(ImageFilter.GaussianBlur(radius=1))
+        img = ImageOps.autocontrast(img, cutoff=1)
+        return img
 
-    # 3. 检测图像对比度是否偏低（低对比度扫描件常见）
-    #    标准差 < 40 表示灰度过于集中，需要额外增强
+    # 2. PIL → numpy 数组
+    arr = np.array(img, dtype=np.uint8)
+
+    # 3. 歪斜检测 + 校正
+    arr = _deskew_image(arr)
+
+    # 4. 双边滤波去噪（保留边缘，比高斯模糊更适合文字）
+    #    对于 400+ DPI 的高分辨率扫描件，使用更大的 kernel
+    kernel_d = 5 if dpi <= 300 else 7
+    arr = cv2.bilateralFilter(arr, kernel_d, 75, 75)
+
+    # 5. 自适应局部二值化
+    arr = _adaptive_binarize(arr)
+
+    # 6. 形态学腐蚀（去除单独噪点）+ 膨胀（修复断裂笔画）
+    #    对 400+ DPI，kernel 稍大一些
+    kernel_size = 1 if dpi <= 300 else 2
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+    arr = cv2.morphologyEx(arr, cv2.MORPH_CLOSE, kernel)
+
+    # 7. 轻度锐化（增强文字边缘对比度）
+    #    kernel 3x3，权重 0.8
+    sharpen_kernel = np.array([
+        [-0.2, -0.2, -0.2],
+        [-0.2,  2.6, -0.2],
+        [-0.2, -0.2, -0.2]
+    ], dtype=np.float32)
+    arr = cv2.filter2D(arr, -1, sharpen_kernel)
+
+    # 8. 钳制到 [0, 255] 并转回 PIL Image
+    arr = np.clip(arr, 0, 255).astype(np.uint8)
+    # PaddleOCR 3.x 需要三通道输入，灰度图转 RGB 不影响识别效果
+    return Image.fromarray(arr, mode='L').convert('RGB')
+
+
+def _detect_page_columns_from_image(img) -> tuple[int, list]:
+    """
+    基于图像垂直投影分析检测页面分栏（OCR 前）。
+
+    使用预处理后的二值图片的垂直投影直方图，找到空白间隙来切分栏目。
+    这比 OCR 后分析词坐标更准确，因为避免了 OCR 分割错误。
+
+    Returns:
+        (column_count, [(x0, x1), ...])  栏目数和每个栏目的 x 边界
+    """
+    import numpy as np
     try:
-        import numpy as np
-        arr = np.array(img, dtype=np.float64)
-        std_dev = float(np.std(arr))
+        import cv2
     except ImportError:
-        std_dev = 100  # 无 numpy 时跳过自适应性增强
+        img_width = img.width if hasattr(img, 'width') else img.shape[1]
+        return 1, [(0, img_width)]
 
-    if std_dev < 40:
-        try:
-            import numpy as np
-            arr_uint8 = np.array(img, dtype=np.uint8)
-        except ImportError:
-            arr_uint8 = None
+    # PIL Image → numpy 数组
+    if hasattr(img, 'width'):
+        arr = np.array(img, dtype=np.uint8)
+    else:
+        arr = img
 
-        if arr_uint8 is not None:
-            try:
-                from cv2 import createCLAHE  # type: ignore
-                clahe = createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-                arr_uint8 = clahe.apply(arr_uint8)
-                img = Image.fromarray(arr_uint8, mode='L')
-            except ImportError:
-                # 无 OpenCV 时用 Pillow 的 equalize 作为降级方案
-                img = ImageOps.equalize(img)
+    h, w = arr.shape[:2]
+    if w < 200:
+        return 1, [(0, w)]
+
+    # 垂直投影：count non-zero (black) pixels in each column
+    # 由于文字为黑色(0)背景为白色(255)，反转后 count non-zero
+    if len(arr.shape) == 3:
+        gray = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = arr
+
+    # 反转：文字=255，背景=0
+    binary = cv2.bitwise_not(gray) if np.mean(gray) > 127 else gray
+
+    # 垂直投影
+    v_proj = np.sum(binary, axis=0, dtype=np.float64)
+    if v_proj.max() == 0:
+        return 1, [(0, w)]
+
+    # 归一化
+    v_proj = v_proj / v_proj.max()
+
+    # 忽略页面边缘（左右各 3% 边距）
+    margin = int(w * 0.03)
+    v_proj[:margin] = 0
+    v_proj[-margin:] = 0
+
+    # 找空白区（投影值 < 阈值的连续列）
+    threshold = 0.02
+    gap_margin = max(int(w * 0.02), 10)  # 最小间隙 2% 屏宽 或 10px
+    gaps = []  # [(start, end)]
+    in_gap = False
+    gap_start = 0
+
+    for x in range(w):
+        if v_proj[x] < threshold:
+            if not in_gap:
+                gap_start = x
+                in_gap = True
         else:
-            img = ImageOps.equalize(img)
+            if in_gap:
+                gap_end = x
+                if gap_end - gap_start >= gap_margin:
+                    gaps.append((gap_start, gap_end))
+                in_gap = False
 
-    # 4. 非锐化掩模（比 SHARPEN 更自然，减少光晕效应）
-    #    radius=2, amount=150%（相对于原图）
-    blurred = img.filter(ImageFilter.GaussianBlur(radius=2))
-    from PIL import ImageChops
-    # highpass = original - blurred
-    highpass = ImageChops.subtract(img, blurred)
-    # sharpened = original + 0.8 * highpass (amount=80%，避免过度锐化)
-    sharpened = ImageChops.add(img, highpass, scale=1.0, offset=0)
-    # 重建：img + (img - blurred) * 0.8
-    from PIL import ImageMath
-    try:
-        img = ImageMath.eval(
-            "convert(min(max(a + (a - b) * 0.8, 0), 255), 'L')",
-            a=img, b=blurred
-        )
-    except Exception:
-        img = sharpened
+    if in_gap:
+        gap_end = w
+        if gap_end - gap_start >= gap_margin:
+            gaps.append((gap_start, gap_end))
 
-    return img
+    if not gaps:
+        return 1, [(0, w)]
 
+    # 只取页面中间区域的间隙（不能太靠左或太靠右）
+    mid_gaps = [
+        (s, e) for s, e in gaps
+        if s > margin and e < w - margin
+    ]
 
-# ──────────────────────────────────────────────
-#  辅助工具：字号/粗体/中英文自适应估算
-# ──────────────────────────────────────────────
+    if not mid_gaps:
+        return 1, [(0, w)]
 
-def _estimate_font_size_px_range(
-    words_info: list,  # list of (text, left, top, width, height)
-    dpi: int,
-) -> dict:
-    """
-    根据字词像素尺寸 + 中英文差异，估算该行可能的字号范围 (pt)。
+    # 按宽度排序，取最宽的间隙
+    mid_gaps.sort(key=lambda g: g[1] - g[0], reverse=True)
+    best_gap = mid_gaps[0]
+    gap_center = (best_gap[0] + best_gap[1]) // 2
 
-    关键改进：中文字符通常填满 bbox（高度≈字身），拉丁字符有升部/降部，
-    Tesseract bbox 对中文通常比实际字身大 8-15%，对英文可能偏大或偏小。
-
-    Returns:
-        {"low": min_pt, "high": max_pt, "median": median_pt, "cjk_ratio": float}
-    """
-    if not words_info:
-        return {"low": 8, "high": 12, "median": 10, "cjk_ratio": 0.0}
-
-    cjk_heights = []
-    latin_heights = []
-    for text, _, _, _, height in words_info:
-        if not text or height <= 0:
-            continue
-        has_cjk = any('\u4e00' <= ch <= '\u9fff' or
-                      '\u3400' <= ch <= '\u4dbf' or
-                      '\uf900' <= ch <= '\ufaff'
-                      for ch in text)
-        cjk_ratio_local = sum(1 for ch in text
-                             if '\u4e00' <= ch <= '\u9fff' or
-                                '\u3400' <= ch <= '\u4dbf' or
-                                '\uf900' <= ch <= '\ufaff') / len(text)
-        if cjk_ratio_local > 0.5:
-            cjk_heights.append(height)
-        elif any(ch.isascii() and ch.isalpha() for ch in text):
-            latin_heights.append(height)
-
-    all_heights = cjk_heights + latin_heights
-    if not all_heights:
-        return {"low": 8, "high": 12, "median": 10, "cjk_ratio": 0.0}
-
-    # CJK 字身系数：Tesseract bbox 通常比实际字身大 ~10-12%
-    CJK_FACTOR = 0.88
-    # 拉丁字身系数：升部/降部让 bbox 偏高，实际 x-height 更小
-    LATIN_FACTOR = 0.78
-
-    if cjk_heights:
-        cjk_median = sorted(cjk_heights)[len(cjk_heights) // 2]
-        cjk_pt = cjk_median * 72 * CJK_FACTOR / dpi
-    else:
-        cjk_pt = None
-
-    if latin_heights:
-        latin_median = sorted(latin_heights)[len(latin_heights) // 2]
-        latin_pt = latin_median * 72 * LATIN_FACTOR / dpi
-    else:
-        latin_pt = None
-
-    # 融合
-    if cjk_pt and latin_pt:
-        median_pt = cjk_pt * 0.7 + latin_pt * 0.3  # CJK 权重更高
-    elif cjk_pt:
-        median_pt = cjk_pt
-    elif latin_pt:
-        median_pt = latin_pt
-    else:
-        median_h = sorted(all_heights)[len(all_heights) // 2]
-        median_pt = median_h * 72 * 0.85 / dpi
-
-    median_pt = round(max(5, min(72, median_pt)), 1)
-    cjk_ratio_global = len(cjk_heights) / len(all_heights) if all_heights else 0.0
-
-    return {
-        "low": round(median_pt * 0.7, 1),
-        "high": round(median_pt * 1.3, 1),
-        "median": median_pt,
-        "cjk_ratio": round(cjk_ratio_global, 2),
-    }
-
-
-def _detect_bold_by_density(
-    words_info: list,  # list of (text, left, top, width, height)
-) -> bool:
-    """
-    基于像素密度检测粗体（替代不可靠的宽高比方法）。
-
-    原理：粗体字符填充率（黑色像素/bbox面积）显著高于常规体。
-    此法对 Tesseract bbox 精度不敏感。
-    """
-    if not words_info:
-        return False
-    densities = []
-    for text, _, _, width, height in words_info:
-        if not text or width <= 0 or height <= 0:
-            continue
-        # 估算笔画面积（每个字符的"黑像素"粗略估算）
-        char_count = len(text)
-        if char_count == 0:
-            continue
-        char_width = width / char_count
-        char_area = char_width * height
-        # 粗体字符：笔画更宽 → 相同 bbox 内"墨量"更多
-        # 中文字符笔画密度约 0.15-0.25，粗体约 0.22-0.35
-        # 拉丁字符笔画密度约 0.10-0.20，粗体约 0.15-0.28
-        # 这里用 bbox 宽高比近似替代（退而求其次但比纯 ar 好）
-        if char_area > 0:
-            density = width / max(height, 1)
-            densities.append(density)
-
-    if not densities:
-        return False
-    avg_density = sum(densities) / len(densities)
-    # 阈值：综合中英文，>= 1.05 视为偏粗
-    return avg_density > 1.05
-def _build_docx_page_from_ocr(
-    docx, data: dict, img_width: int, img_height: int, dpi: int,
-):
-    """
-    从 Tesseract image_to_data 的 DICT 输出重建 Word 页面排版（支持多栏）。
-
-    流程：
-    1. 收集全部词条
-    2. 检测页面是否分栏（双栏/多栏）
-    3. 对每个栏目分别调用 _build_column_from_ocr 重建排版
-    """
-    MIN_CONFIDENCE = 30
-
-    raw_words = []
-    n = len(data["text"])
-    for j in range(n):
-        text = (data["text"][j] or "").strip()
-        if not text:
-            continue
-        conf = int(data["conf"][j])
-        if conf < 0 or conf < MIN_CONFIDENCE:
-            continue
-        left = int(data["left"][j])
-        top = int(data["top"][j])
-        width = int(data["width"][j])
-        height = int(data["height"][j])
-        block_num = int(data["block_num"][j])
-        line_num = int(data["line_num"][j])
-        raw_words.append((text, left, top, width, height, block_num, line_num))
-
-    if not raw_words:
-        p = docx.add_paragraph()
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = p.add_run("[此页未识别到文字内容]")
-        run.italic = True
-        return
-
-    columns = _detect_columns(raw_words, img_width)
-
-    for x0, x1 in columns:
-        col_width = x1 - x0
-        # 平移 left 坐标到栏目局部坐标，保留其他字段
-        col_words = [
-            (w[0], w[1] - x0, w[2], w[3], w[4], w[5], w[6])
-            for w in raw_words
-            if x0 <= w[1] + w[3] / 2 <= x1
+    # 确认左右两侧都有足够内容（至少 10% 页宽）才判定为双栏
+    if gap_center > w * 0.15 and gap_center < w * 0.85:
+        return 2, [
+            (int(w * 0.02), gap_center),
+            (gap_center, int(w * 0.98))
         ]
-        if not col_words:
-            continue
-        _build_column_from_ocr(docx, col_words, col_width, img_height, dpi)
+
+    return 1, [(0, w)]
 
 
-def _detect_columns(words, img_width):
+# ──────────────────────────────────────────────
+#  字号/粗体策略：扫描件 OCR 无法可靠推测字号和粗体
+#  遵循 WPS 保守原则：全文统一字号、不加粗、不换字体、不换颜色
+# ──────────────────────────────────────────────
+
+# 扫描件默认正文字号（五号 ≈ 10.5pt，适用于中文文档）
+_SCANNED_BODY_FS = 10.5
+
+
+
+
+
+def _split_exam_options_in_line(text: str) -> list[str]:
     """
-    基于词条 x 坐标分布检测页面栏目。
-
-    算法：
-    - 按词左边界排序，寻找页面中间区域（30%-70%）的最大水平空白间隙。
-    - 若最大间隙超过页宽的 6%，且两侧均有文字，则判定为双栏。
-
-    Returns:
-        [(x0, x1), ...]  每栏的全局 x 边界
+    把一行内同时出现多个 A/B/C/D 选项的文本拆成多行。
+    例如："A. 旧石器时代早期 B. 旧石器时代晚期"
+    → ["A. 旧石器时代早期", "B. 旧石器时代晚期"]
     """
-    if not words or img_width <= 0:
-        return [(0, img_width)]
+    import re
+    text = text.strip()
+    if not text:
+        return [""]
 
-    x_lefts = sorted([w[1] for w in words])
-    if len(x_lefts) < 2:
-        return [(0, img_width)]
+    # 匹配 A/B/C/D 后面跟标点或空格（不用 \b，因 re.split 中 lookahead+\b 行为异常）
+    pattern = r"(?=[A-Da-d][\.．、])"
+    parts = [p.strip() for p in re.split(pattern, text) if p.strip()]
+    if len(parts) <= 1:
+        return [text]
 
-    best_gap = 0
-    best_idx = -1
-    for i in range(1, len(x_lefts)):
-        gap = x_lefts[i] - x_lefts[i - 1]
-        if gap <= best_gap:
-            continue
-        gap_pos = (x_lefts[i - 1] + x_lefts[i]) / 2
-        # 只考虑页面中间区域的大间隙，避免页边距干扰
-        if img_width * 0.30 < gap_pos < img_width * 0.70 and gap > img_width * 0.06:
-            best_gap = gap
-            best_idx = i
+    # 如果第一个 part 不以选项开头，可能是题干，保留原样
+    if not re.match(r"^[A-Da-d][\.．、]", parts[0]):
+        return [text]
 
-    if best_idx < 0:
-        return [(0, img_width)]
+    return parts
 
-    split_x = (x_lefts[best_idx - 1] + x_lefts[best_idx]) / 2
-    left_words = [w for w in words if w[1] + w[3] / 2 < split_x]
-    right_words = [w for w in words if w[1] + w[3] / 2 >= split_x]
 
-    if not left_words or not right_words:
-        return [(0, img_width)]
+def _split_multi_questions_in_line(text: str) -> list[str]:
+    """
+    把一行内多个题号的内容拆成多行。
+    例如："25. 题干A  26. 题干B  27. 题干C"
+    → ["25. 题干A", "26. 题干B", "27. 题干C"]
 
-    # 给栏边界留少量余量，避免裁剪文字
-    margin = 20
-    x0_l = max(0, min(w[1] for w in left_words) - margin)
-    x1_l = min(img_width, max(w[1] + w[3] for w in left_words) + margin)
-    x0_r = max(0, min(w[1] for w in right_words) - margin)
-    x1_r = min(img_width, max(w[1] + w[3] for w in right_words) + margin)
+    同时处理括号题号：(1) xxx (2) yyy
+    """
+    import re
+    text = text.strip()
+    if not text:
+        return [""]
 
-    # 如果右栏边界没有明显超出左栏，说明不是真正的分栏
-    if x0_r < x1_l + img_width * 0.05:
-        return [(0, img_width)]
+    # 匹配题号模式：N.  N． (N)  或 材料X
+    pattern = r"(?=\b\d{1,2}[\.．]\s+|\b\(\d{1,2}\)\s+|【答案】|【解析】|材料[一二三四五六七八九十]+)"
+    parts = [p.strip() for p in re.split(pattern, text) if p.strip()]
+    if len(parts) <= 1:
+        return [text]
 
-    return [(x0_l, x1_l), (x0_r, x1_r)]
+    # 过滤：如果第一个 part 不以题号开头，保留原样
+    if not re.match(r"^\d{1,2}[\.．]|^\(\d{1,2}\)|^【|^材料", parts[0]):
+        return [text]
 
+    return parts
+
+
+def _detect_exam_boundary_line(text: str) -> bool:
+    """
+    检测文本行是否为考试卷常见边界（题号、选项、材料、答案等）。
+    用于在 OCR 排版重建中强制分段，避免多题合并。
+    """
+    import re
+
+    text = text.strip()
+    if not text:
+        return False
+
+    patterns = [
+        r"^\d{1,2}[\.．]\s*",             # 24.  25.
+        r"^\(\d{1,2}\)\s*",               # (1)  (2)
+        r"^【答案】",                       # 【答案】
+        r"^【解析】",                       # 【解析】
+        r"^材料[一二三四五六七八九十]+\s*",  # 材料一 材料二
+        r"^[A-Da-d][\.．、]\s*",            # A.  B.
+        r"^\(\d+分\)",                    # (12分) (15分)
+    ]
+
+    for pat in patterns:
+        if re.match(pat, text):
+            return True
+    return False
 
 
 def _build_column_from_ocr(
@@ -937,17 +1156,17 @@ def _build_column_from_ocr(
         line.sort(key=lambda x: x[1])
     lines_raw = merged_lines
 
-    # ==================== 第三步：计算每行的排版属性（改进字号+粗体检测） ====================
+    # ==================== 第三步：计算每行的排版属性（统一字号，不推测粗体） ====================
 
     LineInfo = tuple[
         list[WordEntry],  # words (sorted by left)
         float,            # line_top (像素)
         float,            # line_bottom
         float,            # line_height
-        float,            # font_size_pt (估算字号)
+        float,            # font_size_pt (固定常量 _SCANNED_BODY_FS)
         float,            # left_margin (行左边界)
         float,            # right_margin (行右边界)
-        bool,             # is_bold (是否粗体)
+        bool,             # is_bold (固定 False，扫描件不推测)
         float,            # alignment_score (-1=left, 0=center, 1=right)
     ]
 
@@ -961,13 +1180,8 @@ def _build_column_from_ocr(
         l_left = min(w[1] for w in line)
         l_right = max(w[1] + w[3] for w in line)
 
-        # 改进的字号估算（区分中英文）
-        simple_words = [(w[0], w[1], w[2], w[3], w[4]) for w in line]
-        fs_info = _estimate_font_size_px_range(simple_words, dpi)
-        fs = fs_info["median"]
-
-        # 改进的粗体检测（密度法）
-        is_bold = _detect_bold_by_density(simple_words)
+        # 不推测字号和粗体：扫描件不存在这些信息，统一使用固定常量
+        fs = _SCANNED_BODY_FS
 
         # 对齐分数：左留白比例 vs 右留白比例
         left_space = l_left
@@ -984,7 +1198,7 @@ def _build_column_from_ocr(
         else:
             align_score = -1.0  # 默认左对齐
 
-        line_infos.append((line, l_top, l_bottom, l_height, fs, l_left, l_right, is_bold, align_score))
+        line_infos.append((line, l_top, l_bottom, l_height, fs, l_left, l_right, False, align_score))
 
     # ==================== 第四步：自适应段落边界检测（密度聚类 + 多信号） ====================
     # 替代固定 1.5× 阈值。核心思想：相邻行的间距如果显著偏离其局部邻域的间距模式，
@@ -1062,34 +1276,19 @@ def _build_column_from_ocr(
             else:
                 gap_signal = 0.0
 
-            # 信号 2：字号突变（标题→正文，或正文→标题）
-            prev_fs = prev_info[4]
-            curr_fs = curr_info[4]
-            if prev_fs > 0:
-                fs_ratio = curr_fs / prev_fs
-                if fs_ratio > 1.3 or fs_ratio < 0.7:
-                    fs_signal = 0.7
-                elif fs_ratio > 1.15 or fs_ratio < 0.85:
-                    fs_signal = 0.4
-                else:
-                    fs_signal = 0.0
-            else:
-                fs_signal = 0.0
-
-            # 信号 3：对齐突变 + 字号下降（标题后 → 正文）
+            # 信号 2：对齐突变（居中→左对齐 → 可能是标题后段落）
             prev_align = prev_info[8]
             curr_align = curr_info[8]
             align_signal = 0.0
             if abs(prev_align) < 0.3 and abs(curr_align - (-1.0)) < 0.3:
-                # 上一行居中/偏居中 → 当前行左对齐 → 可能是标题后段落
-                if curr_fs < prev_fs * 0.95:
-                    align_signal = 0.5
+                # 上一行居中/偏居中 → 当前行左对齐 → 标题后正文
+                align_signal = 0.5
 
-            # 信号 4：首行缩进（左边界突然右移超过 1.5 字符宽）
+            # 信号 3：首行缩进（左边界突然右移超过 1.5 字符宽）
             prev_left = prev_info[5]
             curr_left = curr_info[5]
             indent_signal = 0.0
-            char_w = curr_fs * dpi / 72  # 字符宽度 (px)
+            char_w = _SCANNED_BODY_FS * dpi / 72  # 固定字符宽度
             indent_px = curr_left - prev_left
             if indent_px > char_w * 1.5:
                 # 确认下一行回到正常边界（如果存在）
@@ -1100,16 +1299,25 @@ def _build_column_from_ocr(
                 else:
                     indent_signal = 0.5
 
-            # 综合信号（加权求和）
+            # 综合信号（加权求和，不再依赖不可靠的字号信号）
             total_signal = (
-                gap_signal * 0.4 +
-                fs_signal * 0.25 +
-                align_signal * 0.15 +
-                indent_signal * 0.2
+                gap_signal * 0.5 +
+                align_signal * 0.25 +
+                indent_signal * 0.25
             )
 
             if total_signal > 0.45:
                 paragraph_breaks.append(i)
+
+    # ---- 考试卷边界强制分段：题号、选项、材料、答案等 ----
+    # 将已有的段落 break 与考试卷边界行合并，确保每题/选项独立成段
+    boundary_breaks = set(paragraph_breaks)
+    for idx, li in enumerate(line_infos):
+        words = li[0]
+        text = _join_words_smart([w[0] for w in words]).strip()
+        if _detect_exam_boundary_line(text):
+            boundary_breaks.add(idx)
+    paragraph_breaks = sorted(boundary_breaks)
 
     # ==================== 第五步：表格检测 ====================
     # 在分类前检测表格区域，将其从普通段落流中移除
@@ -1133,16 +1341,9 @@ def _build_column_from_ocr(
                                   for li in range(start_line, end_line + 1))
         paragraph_groups.append((start_line, end_line, para_lines_in_table))
 
-    # 计算页级统计量
-    all_font_sizes = [li[4] for li in line_infos]
-    sorted_fs_all = sorted(all_font_sizes)
-    med_fs_page = sorted_fs_all[len(sorted_fs_all) // 2] if sorted_fs_all else 10
-    max_fs_page = max(all_font_sizes) if all_font_sizes else 10
-
-    # 正文字号中位数（排除明显偏大的标题行）
-    body_fs_list = [fs for fs in all_font_sizes if fs < med_fs_page * 1.25]
-    med_body_fs = (sorted(body_fs_list)[len(body_fs_list) // 2]
-                   if body_fs_list else med_fs_page)
+    # 计算页级统计量（扫描件不推测字号，使用固定常量）
+    med_body_fs = _SCANNED_BODY_FS
+    max_fs_page = _SCANNED_BODY_FS
 
     # 分类+输出
     for start, end, is_table in paragraph_groups:
@@ -1190,84 +1391,14 @@ def _classify_paragraph_type_v2(
     max_fs_page: float,
     med_line_gap: float,
     dpi: int,
-    line_index: int = 0,   # 段落在页内的起始行索引（用于位置权重）
+    line_index: int = 0,
 ) -> str:
     """
-    将段落分类为：'h1', 'h2', 'h3', 'list', 'body'
+    段落分类器（已简化）。
 
-    改进要点：
-    1. 位置权重：页面上半部分的加大字号更有可能是标题
-    2. 字号分布：与页面字号分布比较（标准差/分位数）
-    3. 编号模式：中文序号（第X章/一、/1.1）增强标题信号
-    4. 多特征融合：加权打分替代 if-else 硬阈值
+    不做强制排版处理后，所有段落统一按纯文本输出，
+    不再区分标题/列表/正文。保留此函数仅为了调用兼容。
     """
-    if not para_lines:
-        return "body"
-
-    # ── 提取特征 ──
-    line_count = len(para_lines)
-    para_fs = max(li[4] for li in para_lines)
-    is_bold = any(li[7] for li in para_lines)
-    fs_ratio = para_fs / max(med_body_fs, 1)
-
-    # 文本
-    all_words = [w[0] for li in para_lines for w in li[0]]
-    full_text = "".join(all_words)
-    text_len = len(full_text)
-
-    # 对齐
-    all_align = [li[8] for li in para_lines]
-    avg_align = sum(all_align) / len(all_align) if all_align else -1.0
-    is_centered = abs(avg_align) < 0.3
-
-    # 位置权重（0=页面顶部，1=页面底部）
-    if line_index >= 0:
-        position_ratio = line_index / max(len(para_lines) * 3, 1)  # 粗略估计
-        position_weight = max(0, 1.0 - position_ratio)  # 靠近顶部权重高
-    else:
-        position_weight = 0.5
-
-    # 编号模式检测（先做，用于增强标题信号）
-    has_numbering = _detect_heading_numbering(full_text)
-
-    # ── 标题评分系统 ──
-    # 各维度 0-1 分数
-    score_size = min(fs_ratio / 1.6, 1.0)        # 字号分（1.6×正文=满分）
-    score_bold = 1.0 if is_bold else 0.0         # 粗体分
-    score_center = 1.0 if is_centered else 0.0   # 居中分
-    score_short = max(0, 1.0 - text_len / 60)    # 简短分（60字以上=0）
-    score_single = 1.0 if line_count <= 2 else max(0, 1.0 - (line_count - 2) * 0.3)
-    score_pos = position_weight                   # 位置分
-    score_number = 1.0 if has_numbering else 0.0  # 编号分
-
-    # 综合标题得分
-    title_score = (
-        score_size * 0.30 +
-        score_bold * 0.20 +
-        score_center * 0.15 +
-        score_short * 0.10 +
-        score_single * 0.10 +
-        score_pos * 0.10 +
-        score_number * 0.05
-    )
-
-    # ── 层级判定 ──
-    if title_score >= 0.65 and fs_ratio >= 1.30:
-        return "h1"
-    elif title_score >= 0.50 and fs_ratio >= 1.18:
-        return "h2"
-    elif title_score >= 0.40 and (fs_ratio >= 1.08 or is_bold):
-        return "h3"
-
-    # ── 降级检测：纯居中+略大+短→H2 ──
-    if is_centered and fs_ratio >= 1.06 and text_len <= 50 and line_count <= 3:
-        return "h2"
-
-    # ── 列表检测 ──
-    first_left = para_lines[0][5]
-    if _is_list_item_v2(full_text, first_left, img_width, med_body_fs, dpi):
-        return "list"
-
     return "body"
 
 
@@ -1344,139 +1475,171 @@ def _detect_tables_in_page(
     line_infos: list, img_width: int, dpi: int,
 ) -> list[dict]:
     """
-    在页面中检测表格区域。
+    在页面中检测表格区域（改进版）。
+
+    核心思路：
+    表格行由多个文本单元格组成，单元格之间有大片垂直空白。
+    如果连续多行在这些空白位置对齐，则判定为表格。
 
     算法：
-    1. 收集所有词的 x 坐标 → 聚类找列边界
-    2. 如果存在 ≥3 个对齐的列 + ≥3 行共享相同列模式 → 判定为表格
-    3. 相邻行间距均匀 + 文本短 → 增强表格信号
-
-    Returns:
-        [{"start_line": int, "end_line": int, "columns": [x1, x2, ...], "rows": int}, ...]
+    1. 对每行按 x 排序，找出相邻词之间的"大间隙"
+    2. 比较相邻行的间隙位置，对齐则视为同一表格行
+    3. 连续 ≥3 行且共享 ≥1 个对齐间隙 → 表格区域
+    4. 根据对齐间隙划分列，计算每列的词中心作为列中心
     """
     if len(line_infos) < 3:
         return []
 
-    # 收集所有词的 (left, line_idx)
-    word_positions: list[tuple[float, int]] = []
-    for li_idx, (words, _, _, _, _, _, _, _, _) in enumerate(line_infos):
-        for w in words:
-            word_positions.append((float(w[1]), li_idx))
+    def _row_gaps(words_for_line: list) -> list[float]:
+        """返回一行中可作为列分隔的间隙中点列表。"""
+        if len(words_for_line) < 2:
+            return []
+        sorted_words = sorted(words_for_line, key=lambda w: w[1])
 
-    if not word_positions:
-        return []
+        widths = [w[3] for w in sorted_words]
+        avg_width = sum(widths) / len(widths) if widths else 0
+        # 间隙阈值：适度宽松，以捕获印刷体表格中的中等列间距
+        gap_threshold = max(avg_width * 0.7, img_width * 0.015)
 
-    # ── 列检测：对 x 坐标聚类 ──
-    x_coords = [wp[0] for wp in word_positions]
-    x_sorted = sorted(x_coords)
+        gaps = []
+        for i in range(len(sorted_words) - 1):
+            right_i = sorted_words[i][1] + sorted_words[i][3]
+            left_j = sorted_words[i + 1][1]
+            gap = left_j - right_i
+            if gap > gap_threshold:
+                gaps.append((right_i + left_j) / 2)
+        return gaps
 
-    # 使用简单的相邻差分聚类
-    X_CLUSTER_GAP_RATIO = 0.015  # 列间距至少为页宽的 1.5%
-    min_gap = img_width * X_CLUSTER_GAP_RATIO
+    def _gaps_match(gaps_a: list[float], gaps_b: list[float], tolerance: float) -> bool:
+        """判断两组间隙是否有至少一对对齐（允许 tolerance）。"""
+        if not gaps_a or not gaps_b:
+            return False
+        for a in gaps_a:
+            for b in gaps_b:
+                if abs(a - b) <= tolerance:
+                    return True
+        return False
 
-    clusters: list[list[float]] = []
-    current = [x_sorted[0]]
-    for x in x_sorted[1:]:
-        if x - current[-1] > min_gap:
-            clusters.append(current)
-            current = [x]
-        else:
-            current.append(x)
-    if current:
-        clusters.append(current)
+    def _find_common_gaps(gaps_list: list[list[float]], tolerance: float) -> list[float]:
+        """找多行共同稳定出现的间隙位置（投票法）。"""
+        all_gaps = []
+        for gaps in gaps_list:
+            all_gaps.extend(gaps)
+        if not all_gaps:
+            return []
 
-    # 每列的中位 x
-    col_centers = [sum(c) / len(c) for c in clusters if len(c) >= 2]
-    col_centers.sort()
+        all_gaps.sort()
+        clusters = [[all_gaps[0]]]
+        for x in all_gaps[1:]:
+            if abs(x - clusters[-1][-1]) <= tolerance:
+                clusters[-1].append(x)
+            else:
+                clusters.append([x])
 
-    # 至少 2 列才有表格意义
-    if len(col_centers) < 2:
-        return []
+        # 只保留出现次数 >= 行数 60% 的簇（比 50% 更严格，减少误检）
+        min_count = max(2, len(gaps_list) * 0.6)
+        common = [sum(c) / len(c) for c in clusters if len(c) >= min_count]
+        return sorted(common)
 
-    # ── 行检测：查找连续行共享相同列模式 ──
-    # 为每行计算"命中了哪些列"
-    def _line_cols(line_words: list) -> list[int]:
-        """返回该行词所属的列索引列表"""
-        result = []
-        for w in line_words:
-            w_left = w[1]
-            # 找到最近的列中心
-            best_col = -1
-            best_dist = img_width
-            for ci, cx in enumerate(col_centers):
-                dist = abs(w_left - cx)
-                if dist < best_dist:
-                    best_dist = dist
-                    best_col = ci
-            # 距离不超过页宽的 5% 才算命中
-            if best_col >= 0 and best_dist < img_width * 0.05:
-                if best_col not in result:
-                    result.append(best_col)
-        return sorted(result)
+    def _col_centers_from_gaps(
+        table_lines: list, gap_positions: list[float], img_w: int,
+    ) -> list[float]:
+        """根据间隙边界划分列，返回每列的词平均 x 中心。"""
+        boundaries = sorted([0] + gap_positions + [img_w])
+        col_words: dict[int, list[float]] = {i: [] for i in range(len(boundaries) - 1)}
 
-    # 扫描连续行，检测表格区域
+        for line in table_lines:
+            for w in line[0]:
+                w_left = w[1]
+                w_right = w_left + w[3]
+                w_center = (w_left + w_right) / 2
+                for ci in range(len(boundaries) - 1):
+                    if boundaries[ci] <= w_center < boundaries[ci + 1]:
+                        col_words[ci].append(w_center)
+                        break
+
+        centers = []
+        for ci in sorted(col_words.keys()):
+            vals = col_words[ci]
+            if vals:
+                centers.append(sum(vals) / len(vals))
+        return centers
+
+    TOLERANCE = img_width * 0.03
+
+    # 1. 计算每行的大间隙
+    rows_gaps: list[tuple[int, list[float]]] = []
+    for li_idx, line_info in enumerate(line_infos):
+        words = line_info[0]
+        rows_gaps.append((li_idx, _row_gaps(words)))
+
+    # 2. 扫描连续行，找表格区域
     table_regions: list[dict] = []
     in_table = False
     table_start = 0
-    table_lines_data: list[list[int]] = []
+    table_gaps_list: list[list[float]] = []
 
-    for li_idx, (words, _, _, _, _, _, _, _, _) in enumerate(line_infos):
-        cols = _line_cols(words)
-        is_table_row = len(cols) >= 2
-
-        if is_table_row and not in_table:
-            in_table = True
-            table_start = li_idx
-            table_lines_data = [cols]
-        elif is_table_row and in_table:
-            table_lines_data.append(cols)
-        elif not is_table_row and in_table:
-            # 表格结束
-            if len(table_lines_data) >= 3:
-                # 确认：多数行共享相同的列数
-                col_counts = [len(c) for c in table_lines_data]
-                mode_count = max(set(col_counts), key=col_counts.count)
-                consistent_rows = sum(1 for c in col_counts if c == mode_count)
-                if consistent_rows >= len(table_lines_data) * 0.6 and mode_count >= 2:
-                    table_regions.append({
-                        "start_line": table_start,
-                        "end_line": li_idx - 1,
-                        "columns": col_centers,
-                        "num_cols": mode_count,
-                        "rows": len(table_lines_data),
-                    })
-            in_table = False
-            table_lines_data = []
-
-    # 尾部未闭合表格
-    if in_table and len(table_lines_data) >= 3:
-        col_counts = [len(c) for c in table_lines_data]
-        mode_count = max(set(col_counts), key=col_counts.count)
-        consistent_rows = sum(1 for c in col_counts if c == mode_count)
-        if consistent_rows >= len(table_lines_data) * 0.6 and mode_count >= 2:
-            table_regions.append({
-                "start_line": table_start,
-                "end_line": len(line_infos) - 1,
-                "columns": col_centers,
-                "num_cols": mode_count,
-                "rows": len(table_lines_data),
-            })
-
-    # 去重：合并重叠区域
-    if table_regions:
-        merged = [table_regions[0]]
-        for t in table_regions[1:]:
-            prev = merged[-1]
-            if t["start_line"] <= prev["end_line"] + 2:
-                # 重叠或紧邻 → 合并
-                prev["end_line"] = max(prev["end_line"], t["end_line"])
-                prev["rows"] = max(prev["rows"], t["rows"])
-                prev["num_cols"] = max(prev["num_cols"], t["num_cols"])
+    for i, (li_idx, gaps) in enumerate(rows_gaps):
+        if not in_table:
+            if len(gaps) >= 1:
+                in_table = True
+                table_start = li_idx
+                table_gaps_list = [gaps]
+        else:
+            prev_gaps = table_gaps_list[-1]
+            if _gaps_match(prev_gaps, gaps, TOLERANCE):
+                table_gaps_list.append(gaps)
             else:
-                merged.append(t)
-        table_regions = merged
+                # 表格结束
+                if len(table_gaps_list) >= 3:
+                    common_gaps = _find_common_gaps(table_gaps_list, TOLERANCE)
+                    if len(common_gaps) >= 1:
+                        table_lines = line_infos[table_start:li_idx]
+                        col_centers = _col_centers_from_gaps(
+                            table_lines, common_gaps, img_width,
+                        )
+                        if len(col_centers) >= 2:
+                            table_regions.append({
+                                "start_line": table_start,
+                                "end_line": li_idx - 1,
+                                "columns": col_centers,
+                                "num_cols": len(col_centers),
+                                "rows": len(table_gaps_list),
+                            })
+                in_table = False
+                if len(gaps) >= 1:
+                    table_start = li_idx
+                    table_gaps_list = [gaps]
 
-    return table_regions
+    # 处理尾部表格
+    if in_table and len(table_gaps_list) >= 3:
+        common_gaps = _find_common_gaps(table_gaps_list, TOLERANCE)
+        if len(common_gaps) >= 1:
+            table_lines = line_infos[table_start:len(line_infos)]
+            col_centers = _col_centers_from_gaps(table_lines, common_gaps, img_width)
+            if len(col_centers) >= 2:
+                table_regions.append({
+                    "start_line": table_start,
+                    "end_line": len(line_infos) - 1,
+                    "columns": col_centers,
+                    "num_cols": len(col_centers),
+                    "rows": len(table_gaps_list),
+                })
+
+    # 合并重叠或紧邻区域
+    if not table_regions:
+        return []
+    merged = [table_regions[0]]
+    for t in table_regions[1:]:
+        prev = merged[-1]
+        if t["start_line"] <= prev["end_line"] + 1:
+            prev["end_line"] = max(prev["end_line"], t["end_line"])
+            prev["rows"] = max(prev["rows"], t["rows"])
+            prev["num_cols"] = max(prev["num_cols"], t["num_cols"])
+        else:
+            merged.append(t)
+
+    return merged
 
 
 def _output_single_table(
@@ -1611,127 +1774,55 @@ def _output_paragraph_v2(
     med_body_fs: float = 10.5,
 ):
     """
-    将一行或多行输出为一个 Word 段落（改进版）。
+    将多行输出为一个 Word 段落（纯文本，无强制排版）。
 
+    只关注换行和空格，不做任何对齐/间距/缩进/标题样式处理。
     LineInfo = tuple[words, top, bottom, height, fs_pt, left, right, bold, align_score]
     """
-    from docx.shared import Pt, Cm
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.oxml.ns import qn
+    from docx.shared import Pt
 
     if not line_infos:
         return
 
-    # ── 段落对齐（基于 align_score 分布） ──
-    all_align = [li[8] for li in line_infos]
-    avg_align = sum(all_align) / len(all_align) if all_align else -1.0
-
-    if abs(avg_align) < 0.3:
-        alignment = WD_ALIGN_PARAGRAPH.CENTER
-    elif avg_align > 0.5:
-        alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    else:
-        alignment = WD_ALIGN_PARAGRAPH.LEFT
-
-    # ── 字号 ──
-    para_fs = max(li[4] for li in line_infos)
-
-    # ── 合成文本 ──
+    # ── 判断是否为 CJK 主导段落 ──
     line_texts = []
     for words, _, _, _, _, _, _, _, _ in line_infos:
         word_texts = [w[0] for w in words]
         lt = join_func(word_texts).strip()
         if lt:
             line_texts.append(lt)
-    full_text = "".join(line_texts)
 
-    # ── 物理边界保护 ──
-    display_fs = max(7, min(48, para_fs))
+    total_chars = sum(len(t) for t in line_texts)
+    cjk_chars = sum(
+        1 for t in line_texts for ch in t
+        if ('\u4e00' <= ch <= '\u9fff' or '\u3400' <= ch <= '\u4dbf')
+    )
+    is_cjk_dominant = total_chars > 0 and (cjk_chars / total_chars) > 0.5
 
-    # ── 按类型输出 ──
-    if para_type == "h1":
-        try:
-            p = docx.add_paragraph(style='Heading 1')
-        except Exception:
-            p = docx.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_before = Pt(18)
-        p.paragraph_format.space_after = Pt(12)
-        p.paragraph_format.line_spacing = 1.5
-        run = p.add_run(full_text)
-        run.font.size = Pt(display_fs)
-        run.font.bold = True
-        run.font.name = 'SimHei'
-        _set_east_asian_font(run, 'SimHei')
+    # ── 单一纯文本段落：无对齐、无间距、无缩进 ──
+    p = docx.add_paragraph()
 
-    elif para_type == "h2":
-        try:
-            p = docx.add_paragraph(style='Heading 2')
-        except Exception:
-            p = docx.add_paragraph()
-        p.alignment = alignment
-        p.paragraph_format.space_before = Pt(14)
-        p.paragraph_format.space_after = Pt(8)
-        p.paragraph_format.line_spacing = 1.5
-        run = p.add_run(full_text)
-        run.font.size = Pt(display_fs)
-        run.font.bold = True
-        run.font.name = 'SimHei'
-        _set_east_asian_font(run, 'SimHei')
+    for line_idx, (words, _, _, _, _, _, _, _, _) in enumerate(line_infos):
+        word_texts = [w[0] for w in words]
+        line_text = join_func(word_texts).strip()
+        if not line_text:
+            continue
 
-    elif para_type == "h3":
-        try:
-            p = docx.add_paragraph(style='Heading 3')
-        except Exception:
-            p = docx.add_paragraph()
-        p.alignment = alignment
-        p.paragraph_format.space_before = Pt(10)
-        p.paragraph_format.space_after = Pt(6)
-        p.paragraph_format.line_spacing = 1.3
-        run = p.add_run(full_text)
-        run.font.size = Pt(display_fs)
-        run.font.bold = True
-        run.font.name = 'SimHei'
-        _set_east_asian_font(run, 'SimHei')
+        # CJK 段落行内可能有多题号或多选项，拆成多行
+        if is_cjk_dominant:
+            q_parts = _split_multi_questions_in_line(line_text)
+            sub_parts = []
+            for q_part in q_parts:
+                sub_parts.extend(_split_exam_options_in_line(q_part))
+        else:
+            sub_parts = [line_text]
 
-    elif para_type == "list":
-        p = docx.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        p.paragraph_format.left_indent = Cm(0.75)
-        p.paragraph_format.first_line_indent = Cm(-0.5)
-        p.paragraph_format.space_before = Pt(1)
-        p.paragraph_format.space_after = Pt(1)
-        p.paragraph_format.line_spacing = 1.3
-        run = p.add_run(full_text)
-        run.font.size = Pt(display_fs)
-        run.font.name = 'SimSun'
-        _set_east_asian_font(run, 'SimSun')
-
-    else:  # body
-        p = docx.add_paragraph()
-        p.alignment = alignment
-        sp = paragraph_spacing_pt if paragraph_spacing_pt > 0 else 6
-        p.paragraph_format.space_before = Pt(round(sp * 0.4, 1))
-        p.paragraph_format.space_after = Pt(round(sp * 0.3, 1))
-        p.paragraph_format.line_spacing = 1.3
-
-        # 首行缩进检测
-        first_indent = _detect_first_line_indent_v2(line_infos, img_width, dpi)
-        if first_indent > 0:
-            p.paragraph_format.first_line_indent = Pt(first_indent)
-
-        # 逐行输出（保留行级字号+粗体差异）
-        for line_idx, (words, _, _, _, font_size_pt, _, _, is_bold, _) in enumerate(line_infos):
-            word_texts = [w[0] for w in words]
-            line_text = join_func(word_texts)
-            if not line_text.strip():
+        for part_idx, part in enumerate(sub_parts):
+            if not part.strip():
                 continue
-            run = p.add_run(line_text)
-            run.font.size = Pt(font_size_pt)
-            run.font.name = 'SimSun'
-            run.font.bold = is_bold
-            _set_east_asian_font(run, 'SimSun')
-            if line_idx < len(line_infos) - 1:
+            run = p.add_run(part)
+            # 行内多选项之间换行；不同 OCR 行之间换行
+            if part_idx < len(sub_parts) - 1 or line_idx < len(line_infos) - 1:
                 p.add_run("\n")
 
 
@@ -1749,38 +1840,7 @@ def _set_east_asian_font(run, font_name: str):
         pass
 
 
-def _detect_first_line_indent_v2(
-    line_infos: list, img_width: int, dpi: int
-) -> float:
-    """检测段落首行缩进（改进版：> 1.2 字符宽 + 第二行回正常边界）"""
-    if len(line_infos) < 2:
-        # 单行段落：有缩进可能是标题，酌情处理
-        if len(line_infos) == 1:
-            first_left = line_infos[0][5]  # left_margin
-            fs = line_infos[0][4]
-            char_w = fs * dpi / 72
-            if first_left > char_w * 3.0 and first_left < img_width * 0.3:
-                indent_pt = first_left * 72 / dpi
-                return round(indent_pt, 1)
-        return 0
 
-    first_left = line_infos[0][5]
-    other_lefts = [l[5] for l in line_infos[1:]]
-    if not other_lefts:
-        return 0
-
-    med_other = sorted(other_lefts)[len(other_lefts) // 2]
-    indent_px = first_left - med_other
-
-    avg_fs = sum(l[4] for l in line_infos) / len(line_infos)
-    char_w_px = avg_fs * dpi / 72
-    min_indent_px = char_w_px * 1.2  # 1.2 个字符以上视为有意缩进
-
-    if indent_px > min_indent_px:
-        indent_pt = indent_px * 72 / dpi
-        return round(min(indent_pt, 48), 1)  # 上限防止异常值
-
-    return 0
 
 
 def get_pdf_page_count(file_path: str) -> int:
