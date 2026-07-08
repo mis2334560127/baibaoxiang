@@ -43,6 +43,68 @@ def detect_pdf_type(file_path: str) -> tuple[str, int, int]:
         return ("text", 0, 0)
 
 
+def _pdf_page_has_tables(file_path: str) -> bool:
+    """
+    使用 PyMuPDF 检测 PDF 中是否包含表格（pdf2docx 表格还原不佳时启用 OCR 兜底）。
+
+    检测策略：
+    1. 标准表格：PyMuPDF page.find_tables()
+    2. 复杂框线 / 斜线表头表格：find_tables() 对斜线表头、复杂框线识别弱，
+       通过页面绘制线条数量 + 表格关键词（如"类别"、"部别"、"总计"）二次判定。
+    """
+    try:
+        import fitz
+        doc = fitz.open(file_path)
+        for page in doc:
+            # 1. 标准表格检测
+            try:
+                tables = page.find_tables()
+                if tables and tables.tables:
+                    doc.close()
+                    return True
+            except Exception:
+                # 旧版 PyMuPDF 可能没有 find_tables，忽略
+                pass
+
+            # 2. 斜线表头 / 复杂框线表格检测
+            try:
+                text = page.get_text()
+                if len(text.strip()) > 20:
+                    # 2a. 斜线表头关键词：类别+部别，或同时出现多个总计/合计
+                    has_header_keywords = (
+                        ("类别" in text and "部别" in text)
+                        or ("项目" in text and "内容" in text)
+                    )
+                    # 2b. 绘制线条数量：普通表格至少 6-8 根线，斜线表头更多
+                    drawings = page.get_drawings()
+                    line_count = 0
+                    for d in drawings:
+                        items = d.get("items") if isinstance(d, dict) else None
+                        if items:
+                            for it in items:
+                                it_type = (
+                                    it[0]
+                                    if isinstance(it, (list, tuple)) and len(it) > 0
+                                    else getattr(it, "type", None)
+                                )
+                                if it_type in ("l", "line"):
+                                    line_count += 1
+                        elif isinstance(d, dict) and d.get("type") in ("l", "line"):
+                            line_count += 1
+
+                    # 关键词或大量线条都视为含复杂表格
+                    if has_header_keywords or line_count >= 8:
+                        doc.close()
+                        return True
+            except Exception:
+                pass
+        doc.close()
+    except Exception:
+        pass
+    return False
+
+
+
 def convert_pdf_to_docx(
     file_path: str,
     output_dir: str = "",
@@ -91,6 +153,17 @@ def convert_pdf_to_docx(
             file_path, out_path, progress_callback=progress_callback, lang=ocr_lang,
         )
     elif not force_ocr and pdf_type == "text":
+        # 文字型 PDF 如果包含表格，pdf2docx 经常把表格拆成文字。
+        # 优先尝试 OCR 路径（已有表格检测/重建），若 PaddleOCR 未安装则回退 pdf2docx。
+        if _pdf_page_has_tables(file_path):
+            try:
+                return _convert_with_ocr(
+                    file_path, out_path,
+                    pdf_type=pdf_type, text_pages=text_pages,
+                    lang=ocr_lang, progress_callback=progress_callback,
+                )
+            except _PaddleOCRError:
+                pass  # 没有 PaddleOCR，回退到 pdf2docx
         # 文字型：使用 pdf2docx 直接转换
         return _convert_with_pdf2docx(
             file_path, out_path, out_dir,
@@ -145,22 +218,163 @@ def _convert_with_pdf2docx(
     if not os.path.exists(out_path):
         raise RuntimeError("转换似乎失败，输出文件未生成")
 
-    # ── 后处理：修正常见格式问题 ──
-    _post_process_docx_formatting(out_path)
+    # ── 后处理：根据用户选项决定行为 ──
+    if preserve_formatting:
+        # 保留原始格式：仅做轻量级关键修复（边距 + 极端字号保护），不破坏字体/颜色/粗体等
+        _light_post_process_docx(out_path)
+    else:
+        # 不保留格式：标准化排版（统一宋体、清除加粗/颜色、规范行距）
+        _post_process_docx_formatting(out_path)
 
     _report(1, 1)  # 完成
     return out_path
 
 
+def _light_post_process_docx(docx_path: str):
+    """
+    轻量级后处理（勾选「保留原始格式」时使用）。
+
+    只修关键问题，不破坏 PDF 原始字体/颜色/粗体等排版信息：
+    1. 页面边距：保留 pdf2docx 设置的原始边距（不修改）
+    2. 极端字号保护：< 5pt → 8pt，> 30pt → 24pt（防止不可读或溢出）
+    3. 中文正文首行缩进：对长段落自动检测并补 2 字符缩进
+    4. 段落间距标准化：消除异常大的段前/段后间距
+    """
+    try:
+        from docx import Document
+        from docx.shared import Pt, Emu
+        from docx.oxml.ns import qn
+    except ImportError:
+        return
+
+    try:
+        doc = Document(docx_path)
+
+        # ══════════════════════════════════════
+        # 第1步：极端字号保护（不修改字体/颜色/粗体/对齐/缩进）
+        # ══════════════════════════════════════
+        for para in doc.paragraphs:
+            for run in para.runs:
+                if run.font.size:
+                    fs_pt = run.font.size.pt
+                    if fs_pt < 5:
+                        run.font.size = Pt(8)
+                    elif fs_pt > 30:
+                        run.font.size = Pt(24)
+
+        # ══════════════════════════════════════
+        # 第2步：计算全文"正文字号"参考值（用于缩进量计算）
+        # ══════════════════════════════════════
+        body_font_sizes: list[float] = []
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if not text:
+                continue
+            cjk_count = sum(
+                1 for ch in text
+                if '\u4e00' <= ch <= '\u9fff' or '\u3400' <= ch <= '\u4dbf'
+            )
+            if cjk_count < 5:  # 太短的跳过（标题/编号行）
+                continue
+            # 收集该段落首 run 的字号
+            for run in para.runs:
+                if run.font.size and run.text.strip():
+                    body_font_sizes.append(run.font.size.pt)
+                    break
+
+        # 中位数作为正文字号，无数据时默认 10.5pt
+        if body_font_sizes:
+            body_font_sizes.sort()
+            body_fs = body_font_sizes[len(body_font_sizes) // 2]
+        else:
+            body_fs = 10.5
+
+        # ══════════════════════════════════════
+        # 第3步：中文正文首行缩进（2字符）
+        # ══════════════════════════════════════
+        indent_pt = body_fs * 2.0  # 2个中文字符宽度
+
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if not text:
+                continue
+
+            # 3a. 跳过标题样式
+            style_name = (para.style.name if para.style else "").lower()
+            if "heading" in style_name or "标题" in style_name:
+                continue
+
+            # 3b. 跳过居中/右对齐（标题特征）
+            pf = para.paragraph_format
+            try:
+                from docx.enum.text import WD_ALIGN_PARAGRAPH
+                if pf.alignment in (WD_ALIGN_PARAGRAPH.CENTER, WD_ALIGN_PARAGRAPH.RIGHT):
+                    continue
+            except Exception:
+                pass
+
+            # 3c. 判断是否为中文正文段落（CJK占比 > 40% 且长度 ≥ 20字）
+            #     同时跳过列表项，避免把“1. / A. / 材料一”也加上首行缩进
+            cjk_count = sum(
+                1 for ch in text
+                if '\u4e00' <= ch <= '\u9fff' or '\u3400' <= ch <= '\u4dbf'
+            )
+            total_chars = len(text)
+            if total_chars < 20 or cjk_count / max(total_chars, 1) < 0.4:
+                continue
+            if _is_list_item(text):
+                continue
+
+            # 3d. 已有缩进则跳过（保护 pdf2docx 已正确设置的缩进）
+            existing = pf.first_line_indent
+            if existing is not None:
+                existing_pt = existing.pt if hasattr(existing, 'pt') else existing / 12700 * 72
+                if existing_pt > 2.0:  # 已有 ≥ 2pt 的正缩进
+                    continue
+
+            # 3e. 左缩进检测：如果左缩进 > 1字符宽，说明 pdf2docx 用左缩进代替了首行缩进
+            left_indent = pf.left_indent
+            if left_indent is not None:
+                left_pt = left_indent.pt if hasattr(left_indent, 'pt') else left_indent / 12700 * 72
+                if left_pt > body_fs * 1.5:
+                    # 把左缩进转换为首行缩进（更符合中文排版习惯）
+                    pf.left_indent = Pt(0)
+                    pf.first_line_indent = Pt(indent_pt)
+                    continue
+
+            # 3f. 设置首行缩进
+            pf.first_line_indent = Pt(indent_pt)
+
+        # ══════════════════════════════════════
+        # 第4步：段落间距标准化
+        # ══════════════════════════════════════
+        for para in doc.paragraphs:
+            pf = para.paragraph_format
+            if pf.space_before is not None and pf.space_before > Pt(18):
+                pf.space_before = Pt(6)
+            if pf.space_after is not None and pf.space_after > Pt(18):
+                pf.space_after = Pt(6)
+            # 负间距也修正
+            if pf.space_before is not None and pf.space_before < Pt(0):
+                pf.space_before = Pt(0)
+            if pf.space_after is not None and pf.space_after < Pt(0):
+                pf.space_after = Pt(0)
+
+        doc.save(docx_path)
+    except Exception:
+        pass
+
+
 def _post_process_docx_formatting(docx_path: str):
     """
-    后处理 pdf2docx 输出的 DOCX，修正中文字体、段落间距等常见问题。
+    后处理 pdf2docx 输出的 DOCX（未勾选「保留原始格式」时使用）。
 
-    修复项：
-    1. 所有非标题段落字体设为 SimSun（宋体），标题设为 SimHei（黑体）
-    2. 正文字号范围保护（7-16pt），避免极端字号
-    3. 行间距统一为 1.3 倍
-    4. 页面边距设为标准 A4
+    标准化排版成规范的中文文档格式：
+    1. 页面边距：A4 标准 2.54cm 四边
+    2. 正文：SimSun 10.5pt，首行缩进 2 字符，1.5 倍行距
+    3. 标题：保留粗体，SimHei（黑体）风格，清除奇怪颜色
+    4. 清除全文不一致的加粗和颜色（除标题外）
+    5. 段落间距标准化
     """
     try:
         from docx import Document
@@ -173,35 +387,65 @@ def _post_process_docx_formatting(docx_path: str):
     try:
         doc = Document(docx_path)
 
-        # ── 页面边距（A4 标准） ──
+        # ══════════════════════════════════════
+        # 第1步：A4 标准页面边距
+        # ══════════════════════════════════════
         for section in doc.sections:
             section.top_margin = Cm(2.54)
             section.bottom_margin = Cm(2.54)
-            section.left_margin = Cm(3.18)
-            section.right_margin = Cm(3.18)
+            section.left_margin = Cm(2.54)
+            section.right_margin = Cm(2.54)
 
-        # ── 遍历所有段落 ──
+        INDENT_2CHAR = Pt(21.0)   # 2 字符 = 2 × 10.5pt
+        BODY_FS = Pt(10.5)        # 五号 = 10.5pt
+
+        # ══════════════════════════════════════
+        # 第2步：遍历段落，分类处理
+        # ══════════════════════════════════════
         for para in doc.paragraphs:
             style_name = (para.style.name if para.style else "").lower()
-            is_heading = "heading" in style_name or "heading" in (para.style.name or "").lower()
+            is_heading = ("heading" in style_name or "标题" in style_name)
 
+            text = para.text.strip()
+            # 判断段落正文特征：CJK 长文本 + 非标题
+            cjk_count = sum(
+                1 for ch in text
+                if '\u4e00' <= ch <= '\u9fff' or '\u3400' <= ch <= '\u4dbf'
+            )
+            is_body_like = (
+                not is_heading
+                and len(text) >= 15
+                and (cjk_count / max(len(text), 1)) > 0.3
+                and not _is_list_item(text)
+            )
+
+            # ── 处理每个 run ──
             for run in para.runs:
-                # 正文字号保护
+                # --- 字号保护 ---
                 if run.font.size:
                     fs_pt = run.font.size.pt
-                    if not is_heading and (fs_pt < 6 or fs_pt > 18):
-                        run.font.size = Pt(10.5)
-                    if is_heading and fs_pt < 9:
-                        run.font.size = Pt(10.5)
+                    if is_heading:
+                        if fs_pt < 9:
+                            run.font.size = BODY_FS
+                        elif fs_pt > 26:
+                            run.font.size = Pt(22)
+                    else:
+                        if fs_pt < 6 or fs_pt > 18:
+                            run.font.size = BODY_FS
 
-                # 统一字体：全文 SimSun，不区分标题/正文
-                run.font.name = 'SimSun'
-                _set_east_asian_font(run, 'SimSun')
+                # --- 统一字体 ---
+                if is_heading:
+                    run.font.name = 'SimHei'
+                    _set_east_asian_font(run, 'SimHei')
+                else:
+                    run.font.name = 'SimSun'
+                    _set_east_asian_font(run, 'SimSun')
 
-                # 清除加粗（pdf2docx 可能引入不一致的加粗）
-                run.font.bold = None
+                # --- 加粗：标题保留，正文清除 ---
+                if not is_heading:
+                    run.font.bold = None
 
-                # 清除文字颜色（Word 标题样式可能自带颜色）
+                # --- 清除文字颜色 ---
                 try:
                     rpr = run._element.get_or_add_rPr()
                     for color_tag in [qn('w:color'), qn('w14:color')]:
@@ -211,24 +455,58 @@ def _post_process_docx_formatting(docx_path: str):
                 except Exception:
                     pass
 
-                # 清除可能存在的无效字体回退
+                # --- 清除无效字体回退 ---
                 try:
                     rpr = run._element.get_or_add_rPr()
                     rFonts = rpr.find(qn('w:rFonts'))
                     if rFonts is not None:
-                        # 保留 eastAsia 设置，清除其他可能导致乱码的属性
                         for attr in ['w:ascii', 'w:hAnsi', 'w:cs']:
                             rFonts.attrib.pop(qn(attr), None)
                 except Exception:
                     pass
 
-            # 段落行间距（非标题）
+            # ── 段落格式 ──
+            pf = para.paragraph_format
+
+            # 行间距
             if not is_heading:
                 try:
-                    if para.paragraph_format.line_spacing is None:
-                        para.paragraph_format.line_spacing = 1.3
+                    pf.line_spacing = 1.5
                 except Exception:
                     pass
+
+            # 首行缩进：只对正文段落
+            if is_body_like:
+                try:
+                    existing = pf.first_line_indent
+                    if existing is None or (
+                        hasattr(existing, 'pt') and existing.pt < 2.0
+                    ):
+                        pf.first_line_indent = INDENT_2CHAR
+                except Exception:
+                    pass
+
+            # 清除多余的左侧缩进（正文段落不应该有大左缩进）
+            if is_body_like and pf.left_indent is not None:
+                try:
+                    left_pt = pf.left_indent.pt if hasattr(pf.left_indent, 'pt') else pf.left_indent / 12700 * 72
+                    if left_pt > 5:
+                        pf.left_indent = Pt(0)
+                except Exception:
+                    pass
+
+            # 段落间距标准化
+            try:
+                if pf.space_before is not None and pf.space_before > Pt(12):
+                    pf.space_before = Pt(6)
+                if pf.space_after is not None and pf.space_after > Pt(12):
+                    pf.space_after = Pt(6)
+                if pf.space_before is not None and pf.space_before < Pt(0):
+                    pf.space_before = Pt(0)
+                if pf.space_after is not None and pf.space_after < Pt(0):
+                    pf.space_after = Pt(0)
+            except Exception:
+                pass
 
         doc.save(docx_path)
     except Exception:
@@ -625,46 +903,60 @@ def _convert_with_ocr(
                     docx.add_page_break()
                 continue
 
-            # ── 将 PaddleOCR 行级结果转为 word 格式 ──
-            # 转换为: (text, left, top, width, height, block_num, line_num, col_idx)
-            all_words = []
+            # ── 将 PaddleOCR 行级结果转为 line_info 格式 ──
+            # 格式: (text, left, top, right, bottom, conf, line_index)
+            ocr_lines: list[dict] = []
             for line_idx, (text, bbox, conf) in enumerate(parsed):
                 if not text or not text.strip():
                     continue
                 if conf < 0.5:
                     continue
-
                 xs = [p[0] for p in bbox]
                 ys = [p[1] for p in bbox]
                 left = int(min(xs))
                 top = int(min(ys))
-                w = int(max(xs) - min(xs))
-                h = int(max(ys) - min(ys))
-                # 每行作为一个"词"（整行文本），block_num=0, line_num=顺序号
-                all_words.append((text.strip(), left, top, w, h, 0, line_idx, 0))
+                right = int(max(xs))
+                bottom = int(max(ys))
+                ocr_lines.append({
+                    "text": text.strip(),
+                    "left": left, "top": top,
+                    "right": right, "bottom": bottom,
+                    "width": right - left,
+                    "height": bottom - top,
+                    "conf": conf,
+                    "line_idx": line_idx,
+                })
 
-            if not all_words:
+            if not ocr_lines:
                 if i < total - 1:
                     docx.add_page_break()
                 continue
 
-            # ---- 按栏目分组并重建排版 ----
+            # ── 全部文字行：原生行级管道重建排版 ──
             if col_count == 1:
-                col_words = [
-                    (t, l, top, wd, ht, bn, ln)
-                    for t, l, top, wd, ht, bn, ln, ci in all_words
-                ]
-                _build_column_from_ocr(docx, col_words, img_width, img_height, dpi)
+                _build_from_ocr_lines(
+                    docx, ocr_lines,
+                    img_width, img_height, dpi,
+                )
             else:
                 for ci in range(col_count):
                     cx0, cx1 = col_boxes[ci]
-                    col_words = [
-                        (t, l - cx0, top, wd, ht, bn, ln)
-                        for t, l, top, wd, ht, bn, ln, _ in all_words
-                        if cx0 <= l + wd / 2 <= cx1
-                    ]
-                    if col_words:
-                        _build_column_from_ocr(docx, col_words, cx1 - cx0, img_height, dpi)
+                    col_width = cx1 - cx0
+                    # 筛选属于该栏的行，并将坐标转为栏内相对坐标
+                    col_lines = []
+                    for ol in ocr_lines:
+                        line_cx = ol["left"] + ol["width"] / 2
+                        if cx0 <= line_cx <= cx1:
+                            col_ol = dict(ol)
+                            col_ol["left"] = ol["left"] - cx0
+                            col_ol["right"] = ol["right"] - cx0
+                            col_ol["width"] = ol["width"]
+                            col_lines.append(col_ol)
+                    if col_lines:
+                        _build_from_ocr_lines(
+                            docx, col_lines,
+                            col_width, img_height, dpi,
+                        )
 
         # 页间分隔
         if i < total - 1:
@@ -1010,6 +1302,31 @@ def _split_multi_questions_in_line(text: str) -> list[str]:
         return [text]
 
     return parts
+
+
+def _is_list_item(text: str) -> bool:
+    """检测文本是否为列表项（编号、选项、材料等），避免被误加首行缩进。"""
+    import re
+    text = text.strip()
+    if not text:
+        return False
+
+    # 编号项：1. 2. 3. 或 (1) (2) 或 ① 或 一、二、
+    cjk_number = "一二三四五六七八九十"
+    patterns = [
+        r"^\d{1,2}[\.．、]\s*",                    # 1. 2. 3.
+        r"^\(\d{1,2}\)\s*",                        # (1) (2)
+        r"^[A-Da-d][\.．、]\s*",                    # A. B. C. D.
+        r"^[①②③④⑤⑥⑦⑧⑨⑩]\s*",                    # ① ②
+        rf"^[（(][{cjk_number}]+[）)]\s*",           # （一） (二)
+        r"^【(?:答案|解析)】",                        # 【答案】【解析】
+        r"^材料[一二三四五六七八九十]+\s*",          # 材料一 材料二
+        r"^第[一二三四五六七八九十]+[章节条款]\s*",   # 第一章 第二节
+    ]
+    for pat in patterns:
+        if re.match(pat, text):
+            return True
+    return False
 
 
 def _detect_exam_boundary_line(text: str) -> bool:
@@ -1379,6 +1696,513 @@ def _build_column_from_ocr(
         )
 
 
+# ═══════════════════════════════════════════════════════════
+#  原生 PaddleOCR 行级排版重建（替代伪词级管道）
+# ═══════════════════════════════════════════════════════════
+
+
+def _build_from_ocr_lines(
+    docx,
+    ocr_lines: list[dict],
+    img_width: int,
+    img_height: int,
+    dpi: int,
+):
+    """
+    原生处理 PaddleOCR 行级结果，重建排版并输出到 docx。
+
+    不再将整行伪装成单个词元，而是直接以行为单位做段落检测。
+    核心改进：
+    1. OCR 行后处理：修复过度合并（双列粘合）和过度拆分
+    2. 硬边界 + 软边界复合段落检测
+    3. 语义特征辅助断段（行末标点、起始模式、长度模式）
+    """
+    import re
+    from docx.shared import Pt
+    from docx.oxml.ns import qn
+
+    if not ocr_lines:
+        return
+
+    # ── 工具函数 ──
+    def _is_cjk(ch: str) -> bool:
+        cp = ord(ch)
+        return (0x4E00 <= cp <= 0x9FFF or 0x3400 <= cp <= 0x4DBF
+                or 0x3000 <= cp <= 0x303F or 0xFF00 <= cp <= 0xFFEF
+                or 0x3040 <= cp <= 0x309F or 0x30A0 <= cp <= 0x30FF
+                or 0xAC00 <= cp <= 0xD7AF)
+
+    def _cjk_ratio(text: str) -> float:
+        if not text:
+            return 0.0
+        return sum(1 for ch in text if _is_cjk(ch)) / len(text)
+
+    def _ends_with_punct(text: str) -> bool:
+        """行末是否为自然段结束标点"""
+        return text.rstrip() and text.rstrip()[-1] in "。！？…~～）)」》"
+
+    def _starts_with_numbering(text: str) -> bool:
+        """行首是否为编号/题号/列表标记"""
+        text = text.strip()
+        cjk_num = "一二三四五六七八九十"
+        patterns = [
+            rf"^第[{cjk_num}]+[章节条款]",            # 第一章
+            rf"^[{cjk_num}]{{1,2}}[、，]",           # 一、
+            r"^\d{1,2}[\.．、]\s*",                    # 1. 2.
+            r"^\(\d{1,2}\)\s*",                        # (1)
+            r"^[A-Da-d][\.．、]\s*",                     # A.
+            r"^[①②③④⑤⑥⑦⑧⑨⑩]",                  # ①
+            r"^【(?:答案|解析|注|说明|摘要|关键词)】",
+            r"^材料[一二三四五六七八九十]+",
+            r"^[（(]\d+[）)]",
+            r"^[IVX]+[\.、]",                          # 罗马数字
+            r"^[•■□▪▫◆◇●○▶▷→⇒☆★\-·]",            # 项目符号
+        ]
+        return any(re.match(pat, text) for pat in patterns)
+
+    def _is_exam_boundary(text: str) -> bool:
+        """考试卷边界：题号/选项/材料/答案"""
+        text = text.strip()
+        patterns = [
+            r"^\d{1,2}[\.．]\s*",
+            r"^\(\d{1,2}\)\s*",
+            r"^【答案】", r"^【解析】",
+            r"^材料[一二三四五六七八九十]+\s*",
+            r"^[A-Da-d][\.．、]\s*",
+            r"^\(\d+分\)",
+        ]
+        return any(re.match(pat, text) for pat in patterns)
+
+    # ═══════════════════════════════════════════════
+    #  步骤1：OCR 后处理 — 修复行切分错误
+    # ═══════════════════════════════════════════════
+    fixed_lines = _postprocess_ocr_lines(ocr_lines, img_width)
+
+    if not fixed_lines:
+        return
+
+    # ═══════════════════════════════════════════════
+    #  步骤2：计算全局统计量
+    # ═══════════════════════════════════════════════
+    line_heights = [ol["height"] for ol in fixed_lines]
+    med_height = sorted(line_heights)[len(line_heights) // 2] if line_heights else 20
+
+    # 行间距
+    gaps = []
+    for i in range(1, len(fixed_lines)):
+        prev_bottom = fixed_lines[i - 1]["bottom"]
+        curr_top = fixed_lines[i]["top"]
+        gaps.append(max(curr_top - prev_bottom, 0))
+    med_gap = sorted(gaps)[len(gaps) // 2] if gaps else med_height
+
+    # 正文行高（用于缩进计算）
+    char_w_px = _SCANNED_BODY_FS * dpi / 72  # 一个字符的像素宽度
+
+    # ═══════════════════════════════════════════════
+    #  步骤3：段落边界检测（硬边界 + 软边界）
+    # ═══════════════════════════════════════════════
+
+    # 3a. 硬边界：必定分段
+    hard_breaks: set[int] = set()
+    hard_breaks.add(0)  # 首行总是段落开始
+
+    # 大间距：超过中位间距 3 倍
+    big_gap_threshold = max(med_gap * 3, med_height * 2.5)
+    for i in range(1, len(fixed_lines)):
+        prev_bottom = fixed_lines[i - 1]["bottom"]
+        curr_top = fixed_lines[i]["top"]
+        gap = curr_top - prev_bottom
+        if gap > big_gap_threshold:
+            hard_breaks.add(i)
+
+    # 考试卷边界
+    for i, ol in enumerate(fixed_lines):
+        if _is_exam_boundary(ol["text"]):
+            hard_breaks.add(i)
+
+    # 编号起始：任何编号行都是新段落的开始
+    # 例外：如果前后行都是同一类型的紧凑短编号（如"A. B. C. 选项"），不强制拆分
+    for i in range(1, len(fixed_lines)):
+        if _starts_with_numbering(fixed_lines[i]["text"]):
+            prev_text = fixed_lines[i - 1]["text"].strip()
+            curr_text = fixed_lines[i]["text"].strip()
+            # 如果当前是短选项（A./B.等）且前一行也是同类短选项，则属于同一选择题的行内选项
+            is_short_option = bool(re.match(r"^[A-Da-d][\.．、]", curr_text))
+            prev_is_option = bool(re.match(r"^[A-Da-d][\.．、]", prev_text))
+            if is_short_option and prev_is_option and len(curr_text) < 20 and len(prev_text) < 20:
+                continue  # 同类短选项，不强制分段（可能本就应在同一选择题内）
+            hard_breaks.add(i)
+
+    # 行末标点结尾 + 下一行缩进 → 可能是新段
+    for i in range(1, len(fixed_lines)):
+        prev_text = fixed_lines[i - 1]["text"].strip()
+        curr_left = fixed_lines[i]["left"]
+        prev_left = fixed_lines[i - 1]["left"]
+        if _ends_with_punct(prev_text) and (curr_left - prev_left) > char_w_px * 1.2:
+            hard_breaks.add(i)
+
+    # 3b. 软边界：综合信号判定（仅对非硬边界位置）
+    all_breaks = set(hard_breaks)
+    for i in range(1, len(fixed_lines)):
+        if i in hard_breaks:
+            continue
+
+        prev = fixed_lines[i - 1]
+        curr = fixed_lines[i]
+        gap = curr["top"] - prev["bottom"]
+
+        # 信号 1：间距信号 — 相对于局部中位数
+        # 取前后各 2 行的间距中位数
+        local_gaps = []
+        for j in range(max(1, i - 2), min(len(fixed_lines) - 1, i + 2)):
+            if j < len(fixed_lines) - 1:
+                lg = fixed_lines[j + 1]["top"] - fixed_lines[j]["bottom"]
+                if lg > 0:
+                    local_gaps.append(lg)
+        local_med = sorted(local_gaps)[len(local_gaps) // 2] if local_gaps else med_gap
+        gap_signal = min(gap / max(local_med, 1) / 2.0, 1.0) if local_med > 0 else 0.0
+
+        # 信号 2：行末标点信号
+        punct_signal = 0.6 if _ends_with_punct(prev["text"]) else 0.0
+
+        # 信号 3：下一行缩进信号
+        indent_px = curr["left"] - prev["left"]
+        indent_signal = 0.5 if indent_px > char_w_px * 1.2 else 0.0
+
+        # 信号 4：长度突变信号（短行→长行，可能标题→正文）
+        prev_len = len(prev["text"].strip())
+        curr_len = len(curr["text"].strip())
+        length_signal = 0.0
+        if prev_len > 0 and curr_len > prev_len * 2.5:
+            length_signal = 0.4
+
+        # 信号 5：对齐变化（居中→左对齐）
+        prev_center = abs((prev["left"] + prev["right"]) / 2 - img_width / 2)
+        curr_center = abs((curr["left"] + curr["right"]) / 2 - img_width / 2)
+        align_signal = 0.3 if (prev_center < img_width * 0.1
+                               and curr_center > img_width * 0.15) else 0.0
+
+        # 加权综合
+        total_signal = (
+            gap_signal * 0.35
+            + punct_signal * 0.25
+            + indent_signal * 0.15
+            + length_signal * 0.15
+            + align_signal * 0.10
+        )
+        if total_signal > 0.40:
+            all_breaks.add(i)
+
+    paragraph_starts = sorted(all_breaks)
+
+    # ═══════════════════════════════════════════════
+    #  步骤4：组装段落并输出
+    # ═══════════════════════════════════════════════
+    for p_idx in range(len(paragraph_starts)):
+        start = paragraph_starts[p_idx]
+        end = (paragraph_starts[p_idx + 1] - 1
+               if p_idx + 1 < len(paragraph_starts)
+               else len(fixed_lines) - 1)
+
+        para_lines = fixed_lines[start:end + 1]
+        if not para_lines:
+            continue
+
+        _output_ocr_paragraph(docx, para_lines, img_width, char_w_px)
+
+
+# ── OCR 行后处理：修复切分错误 ──
+
+def _postprocess_ocr_lines(
+    ocr_lines: list[dict], img_width: int
+) -> list[dict]:
+    """
+    修复 PaddleOCR 常见的行切分错误：
+
+    1. 过度合并：同一行检测框内包含多列文字（宽框内有 >30% 页宽的水平空白）
+       → 按空白间隙拆分为多行
+    2. 过度拆分：连续两行左对齐、行文本没有句末标点、间距正常
+       → 合并为一行
+    3. 修复后的行按 y 坐标重新排序
+    """
+    import re
+
+    if not ocr_lines:
+        return []
+
+    # 先按 top 排序，确保顺序处理
+    sorted_lines = sorted(ocr_lines, key=lambda ol: (ol["top"], ol["left"]))
+
+    result: list[dict] = []
+
+    # ── 第1遍：检测过度合并的行（宽框内有多列空白）──
+    for ol in sorted_lines:
+        text = ol["text"]
+        width = ol["width"]
+        # 宽度 > 60% 页宽 → 可能合并了多列
+        if width > img_width * 0.55 and len(text) > 15:
+            # 在空格的宽间隙处拆分（>6个字符宽度的空白）
+            parts = _split_merged_line_by_gaps(text, width, img_width)
+            if len(parts) > 1:
+                # 按比例分配坐标
+                part_width = width / len(parts)
+                for pi, part in enumerate(parts):
+                    result.append({
+                        "text": part.strip(),
+                        "left": ol["left"] + int(pi * part_width * 0.95),
+                        "top": ol["top"],
+                        "right": ol["left"] + int((pi + 1) * part_width * 0.95),
+                        "bottom": ol["bottom"],
+                        "width": int(part_width * 0.9),
+                        "height": ol["height"],
+                        "conf": ol.get("conf", 0.9),
+                        "line_idx": ol.get("line_idx", 0),
+                    })
+                continue
+        result.append(ol)
+
+    # ── 第2遍：检测过度拆分的行（连续短行本应属于同一行）──
+    # 条件：相邻两行 左边界接近 + 间距 < 1.2x 行高 + 前一行不以标点结尾
+    merged: list[dict] = []
+    i = 0
+    while i < len(result):
+        current = dict(result[i])
+        # 尝试与后续行合并
+        while i + 1 < len(result):
+            next_ol = result[i + 1]
+            gap = next_ol["top"] - current["bottom"]
+            left_diff = abs(current["left"] - next_ol["left"])
+            same_line_gap = current["height"] * 1.1
+
+            # 合并条件：间距紧 + 左对齐 + 不是自然段尾 + 不是考试边界 + 不是表格式数据
+            curr_tokens = len(current["text"].split())
+            next_tokens = len(next_ol["text"].split())
+            is_tabular = curr_tokens >= 3 or next_tokens >= 3
+
+            if (gap < same_line_gap
+                    and left_diff < current["height"] * 1.5
+                    and not (current["text"].rstrip()
+                             and current["text"].rstrip()[-1] in "。！？…")
+                    and not _is_line_boundary(current["text"])
+                    and not _is_line_boundary(next_ol["text"])
+                    and not is_tabular):
+                # 合并文本（CJK 不加空格，Latin 加空格）
+                curr_text = current["text"].strip()
+                next_text = next_ol["text"].strip()
+                if (curr_text and next_text
+                        and curr_text[-1].isascii()
+                        and next_text[0].isascii()):
+                    current["text"] = curr_text + " " + next_text
+                else:
+                    current["text"] = curr_text + next_text
+                current["right"] = max(current["right"], next_ol["right"])
+                current["bottom"] = next_ol["bottom"]
+                current["width"] = current["right"] - current["left"]
+                current["height"] = current["bottom"] - current["top"]
+                i += 1  # 跳过被合并的行
+            else:
+                break
+        merged.append(current)
+        i += 1
+
+    # ── 第3遍：修复行内间隙过大的单行（可能仍残留合并）──
+    final: list[dict] = []
+    for ol in merged:
+        text = ol["text"]
+        # 检查是否有中文字符之间的超大空白（通常是非等宽字体造成的空格折叠）
+        text = re.sub(r'(?<=[\u4e00-\u9fff])\s{2,}(?=[\u4e00-\u9fff])', '', text)
+        # 检查是否有多余的前后空格
+        text = text.strip()
+        if text:
+            ol["text"] = text
+            final.append(ol)
+
+    return final
+
+
+def _split_merged_line_by_gaps(
+    text: str, line_width: int, img_width: int
+) -> list[str]:
+    """
+    对宽行按文本内间隙拆分。利用 OCR 文本中空格的分布推断列边界。
+    如果存在 ≥ 3 个连续空格且位置相对均匀 → 判定为多列合并。
+    """
+    import re
+
+    # 找连续 ≥ 3 个空格的位置
+    gap_positions = []
+    for m in re.finditer(r'\s{3,}', text):
+        gap_positions.append((m.start(), m.end()))
+
+    if not gap_positions:
+        return [text]
+
+    # 过滤：只保留跨距相对均匀的间隙
+    if len(gap_positions) == 1:
+        # 只有一个大间隙 → 可能分为 2 列
+        s, e = gap_positions[0]
+        left_part = text[:s].strip()
+        right_part = text[e:].strip()
+        if left_part and right_part and len(left_part) >= 2 and len(right_part) >= 2:
+            return [left_part, right_part]
+        return [text]
+
+    # 多个间隙 → 检查是否均匀分布
+    positions = [(g[0] + g[1]) // 2 for g in gap_positions]
+    positions.append(len(text))  # 文本末尾作为最后一个边界
+    segments = []
+    prev = 0
+    for pos in positions:
+        seg = text[prev:pos].strip()
+        if seg:
+            segments.append(seg)
+        prev = pos
+
+    # ── 严格的拆分验证 ──
+    if len(segments) < 2:
+        return [text]
+
+    seg_lens = [len(s) for s in segments]
+    avg_seg_len = sum(seg_lens) / len(seg_lens)
+    short_count = sum(1 for sl in seg_lens if sl < 5)
+
+    # 拒绝条件 1：大多数段太短 → 是表头文字，不是合并列
+    if short_count > len(segments) / 2:
+        return [text]
+
+    # 拒绝条件 2：平均段长 < 6 → 段内容太少，不适合拆分
+    if avg_seg_len < 6:
+        return [text]
+
+    # 拒绝条件 3：拆分太多（> 5 列）→ 很可能是表头误拆
+    if len(segments) > 5:
+        return [text]
+
+    # 拒绝条件 4：段长悬殊过大（最大/最小 ≥ 4）
+    if max(seg_lens) / max(min(seg_lens), 1) >= 4:
+        return [text]
+
+    return segments
+
+
+# ── 输出 OCR 段落到 docx ──
+
+def _output_ocr_paragraph(
+    docx,
+    para_lines: list[dict],
+    img_width: int,
+    char_w_px: float,
+):
+    """将已分组为段落的 OCR 行输出为 Word 段落。"""
+    from docx.shared import Pt
+    import re
+
+    if not para_lines:
+        return
+
+    # 合并段内所有行的文本
+    line_texts = [ol["text"].strip() for ol in para_lines]
+    line_texts = [t for t in line_texts if t]
+    if not line_texts:
+        return
+
+    # 检查是否为列表/编号项
+    first_text = line_texts[0]
+    is_list = _is_list_item(first_text) or _starts_with_numbering(first_text)
+
+    # 检查是否为考试卷选项
+    is_exam_option = bool(re.match(r"^[A-Da-d][\.．、]", first_text))
+
+    # 检查 CJK 占比
+    total_text = "".join(line_texts)
+    cjk_chars = sum(1 for ch in total_text if '\u4e00' <= ch <= '\u9fff'
+                    or '\u3400' <= ch <= '\u4dbf')
+    is_cjk_dominant = len(total_text) > 0 and cjk_chars / len(total_text) > 0.40
+
+    # 检查是否居中（可能是标题）
+    avg_center_offset = sum(
+        abs((ol["left"] + ol["right"]) / 2 - img_width / 2)
+        for ol in para_lines
+    ) / len(para_lines)
+    is_centered = avg_center_offset < img_width * 0.12
+
+    # 创建段落
+    p = docx.add_paragraph()
+
+    # 设置段落格式
+    if is_list or is_exam_option:
+        # 列表项：悬挂缩进
+        p.paragraph_format.left_indent = Pt(_SCANNED_BODY_FS)
+        p.paragraph_format.first_line_indent = Pt(-_SCANNED_BODY_FS)
+    elif is_centered and len(total_text) < 60:
+        # 短居中文本 → 标题效果（无缩进，居中）
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    elif is_cjk_dominant and len(total_text) > 20:
+        # CJK 长段落：首行缩进 2 字符
+        p.paragraph_format.first_line_indent = Pt(_SCANNED_BODY_FS * 2)
+
+    # 输出文本：拆分行内多题号/多选项
+    for li, text in enumerate(line_texts):
+        # CJK 段落拆题号和选项
+        if is_cjk_dominant:
+            parts = _split_multi_questions_in_line(text)
+            sub_parts = []
+            for part in parts:
+                sub_parts.extend(_split_exam_options_in_line(part))
+        else:
+            sub_parts = [text]
+
+        for pi, part in enumerate(sub_parts):
+            if not part.strip():
+                continue
+            run = p.add_run(part)
+            run.font.size = Pt(_SCANNED_BODY_FS)
+            # 行内选项之间换行，不同 OCR 行之间换行
+            if pi < len(sub_parts) - 1 or li < len(line_texts) - 1:
+                p.add_run("\n")
+
+    # 确保段落至少有一个换行（不为空）
+    if not p.runs:
+        p.add_run("")
+
+
+def _starts_with_numbering(text: str) -> bool:
+    """行首是否为编号/题号/列表标记（模块级版本）"""
+    import re
+    text = text.strip()
+    cjk_num = "一二三四五六七八九十"
+    patterns = [
+        rf"^第[{cjk_num}]+[章节条款]",
+        rf"^[{cjk_num}]{{1,2}}[、，]",
+        r"^\d{1,2}[\.．、]\s*",
+        r"^\(\d{1,2}\)\s*",
+        r"^[A-Da-d][\.．、]\s*",
+        r"^[①②③④⑤⑥⑦⑧⑨⑩]",
+        r"^【(?:答案|解析|注|说明|摘要|关键词)】",
+        r"^材料[一二三四五六七八九十]+",
+        r"^[（(]\d+[）)]",
+        r"^[IVX]+[\.、]",
+        r"^[•■□▪▫◆◇●○▶▷→⇒☆★\-·]",
+    ]
+    return any(re.match(pat, text) for pat in patterns)
+
+
+def _is_line_boundary(text: str) -> bool:
+    """检测行是否为不可合并的边界行（题号、选项、答案行等）"""
+    import re
+    text = text.strip()
+    patterns = [
+        r"^\d{1,2}[\.．]\s*",           # 24. 25.
+        r"^\(\d{1,2}\)\s*",              # (1) (2)
+        r"^【答案】",                      # 【答案】
+        r"^【解析】",                      # 【解析】
+        r"^材料[一二三四五六七八九十]+\s*", # 材料一
+        r"^[A-Da-d][\.．、]\s*",           # A. B.
+    ]
+    return any(re.match(pat, text) for pat in patterns)
+
+
 # ──────────────────────────────────────────────
 #  段落分类器 v2（位置权重 + 字号分布 + 多特征融合）
 # ──────────────────────────────────────────────
@@ -1639,7 +2463,26 @@ def _detect_tables_in_page(
         else:
             merged.append(t)
 
-    return merged
+    # 斜线表头扩展：若表格上方有"类别/项目"等跨列表头文字，纳入表格
+    extended = []
+    for t in merged:
+        start = t["start_line"]
+        if start > 0:
+            prev_line = line_infos[start - 1]
+            prev_text = "".join(w[0] for w in prev_line[0]).strip()
+            if ("类别" in prev_text or "项目" in prev_text) and len(prev_line[0]) <= 3:
+                start = start - 1
+                t = {
+                    "start_line": start,
+                    "end_line": t["end_line"],
+                    "columns": t["columns"],
+                    "num_cols": t["num_cols"],
+                    "rows": t["end_line"] - start + 1,
+                }
+        extended.append(t)
+
+    return extended
+
 
 
 def _output_single_table(
@@ -1719,18 +2562,54 @@ def _output_single_table(
     col_map = {old: new for new, old in enumerate(active_cols)}
     actual_cols = len(active_cols)
 
+    # 检测并处理斜线表头：第一行仅含"类别/项目"等跨列表头文字
+    # 斜线表头在 Word 中用"合并首行所有单元格"来近似还原
+    diagonal_header_text = ""
+    header_row_offset = 0
+    if non_empty_rows:
+        first_row = non_empty_rows[0]
+        first_text = "".join(first_row.get(ci, "") for ci in active_cols).strip()
+        if (
+            ("类别" in first_text or "项目" in first_text)
+            and len(first_text) <= 6
+            and len(non_empty_rows) > 1
+        ):
+            diagonal_header_text = first_text
+            non_empty_rows = non_empty_rows[1:]
+            header_row_offset = 1
+
+    if not non_empty_rows:
+        return
+
     # 创建 DOCX 表格
-    table = docx.add_table(rows=len(non_empty_rows), cols=actual_cols)
+    table = docx.add_table(
+        rows=len(non_empty_rows) + header_row_offset, cols=actual_cols
+    )
     table.style = 'Table Grid'
 
+    # 输出斜线表头（合并首行）
+    if header_row_offset and diagonal_header_text:
+        for ci in range(1, actual_cols):
+            table.cell(0, 0).merge(table.cell(0, ci))
+        cell = table.cell(0, 0)
+        cell.text = ""
+        p = cell.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(diagonal_header_text)
+        run.font.bold = True
+        run.font.size = Pt(9)
+        run.font.name = 'SimSun'
+        _set_east_asian_font(run, 'SimSun')
+
     for ri, row_data in enumerate(non_empty_rows):
+        table_ri = ri + header_row_offset
         for ci_old, ci_new in col_map.items():
             cell_text = row_data.get(ci_old, "")
-            cell = table.cell(ri, ci_new)
+            cell = table.cell(table_ri, ci_new)
             cell.text = ""
             p = cell.paragraphs[0]
             run = p.add_run(cell_text)
-            # 表头行（第一行）加粗体
+            # 表头行（原第一行数据）加粗体
             if ri == 0:
                 run.font.bold = True
                 run.font.size = Pt(9)
@@ -1738,6 +2617,7 @@ def _output_single_table(
                 run.font.size = Pt(9)
             run.font.name = 'SimSun'
             _set_east_asian_font(run, 'SimSun')
+
 
     # 表格后添加空行分隔
     p_sep = docx.add_paragraph()
@@ -1758,9 +2638,9 @@ def _output_tables(
         table_lines = line_infos[t["start_line"]:t["end_line"] + 1]
         _output_single_table(docx, t, table_lines, img_width, dpi, join_func)
 
-
 # ──────────────────────────────────────────────
-#  段落输出 v2（支持标题样式 + 表格 + 正文排版）
+#  段落输出 v2（支持标题样式 + 正文排版）
+#  注：表格仅由词级检测路径处理，OCR 路径直接输出文字。
 # ──────────────────────────────────────────────
 
 def _output_paragraph_v2(
@@ -1799,8 +2679,20 @@ def _output_paragraph_v2(
     )
     is_cjk_dominant = total_chars > 0 and (cjk_chars / total_chars) > 0.5
 
-    # ── 单一纯文本段落：无对齐、无间距、无缩进 ──
+    # ── 判断段落类型：列表项 / 中文正文 / 其他 ──
+    is_list_like = False
+    if line_texts:
+        is_list_like = _is_list_item(line_texts[0])
+
+    # ── 单一纯文本段落：无对齐、无间距 ──
+    # 对列表项使用悬挂缩进：编号在左边界，换行文字缩进 1 字符
+    # 对中文正文使用首行缩进 2 字符
     p = docx.add_paragraph()
+    if is_list_like:
+        p.paragraph_format.left_indent = Pt(med_body_fs)
+        p.paragraph_format.first_line_indent = Pt(-med_body_fs)
+    elif is_cjk_dominant:
+        p.paragraph_format.first_line_indent = Pt(med_body_fs * 2)
 
     for line_idx, (words, _, _, _, _, _, _, _, _) in enumerate(line_infos):
         word_texts = [w[0] for w in words]

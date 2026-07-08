@@ -17,7 +17,7 @@
   "record_fps": 15,
   "record_codec": "libx264",
   "record_format": "mp4",
-  "pdf_preserve_formatting": true,
-  "pdf_preserve_images": true,
+  "pdf_preserve_formatting": false,
+  "pdf_preserve_images": false,
   "pdf_ocr_lang": "ch"
 }
