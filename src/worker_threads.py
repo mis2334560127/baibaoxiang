@@ -158,13 +158,13 @@ class ConvertWorker(QThread):
 
 
 class ExcelMergeWorker(QThread):
-    """批量解压合并 Excel 线程"""
+    """批量合并 Excel 线程（支持直接 Excel 文件 + 压缩包提取）"""
     file_progress = pyqtSignal(int, int)          # (current_idx, total)
     file_done = pyqtSignal(str, bool, str)        # (filename, success, msg)
 
-    def __init__(self, archive_files: list[str], output_path: str):
+    def __init__(self, input_files: list[str], output_path: str):
         super().__init__()
-        self.archive_files = archive_files
+        self.input_files = input_files
         self.output_path = output_path
         self._cancelled = False
 
@@ -174,55 +174,81 @@ class ExcelMergeWorker(QThread):
 
     def run(self):
         from src.modules.excel_merger import (
+            ARCHIVE_EXTS, EXCEL_EXTS,
             extract_excel_from_archive, read_excel_data, merge_and_write,
         )
 
         all_rows: list[list] = []
         all_headers: list | None = None
         success = fail = 0
-        total = len(self.archive_files)
+        total = len(self.input_files)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            for i, archive_path in enumerate(self.archive_files):
+            for i, file_path in enumerate(self.input_files):
                 if self._cancelled:
                     break
                 self.file_progress.emit(i + 1, total)
-                filename = os.path.basename(archive_path)
+                filename = os.path.basename(file_path)
+                ext = os.path.splitext(file_path)[1].lower()
 
                 try:
-                    # 1. 解压提取 Excel 文件
-                    excel_files = extract_excel_from_archive(archive_path, temp_dir)
-                    if not excel_files:
-                        self.file_done.emit(filename, False, "压缩包内未找到 Excel 文件")
-                        fail += 1
-                        continue
+                    # 判断文件类型：压缩包需要解压提取，Excel 文件直接读取
+                    if ext in ARCHIVE_EXTS:
+                        # ── 压缩包路径 ──
+                        excel_files = extract_excel_from_archive(file_path, temp_dir)
+                        if not excel_files:
+                            self.file_done.emit(filename, False, "压缩包内未找到 Excel 文件")
+                            fail += 1
+                            continue
 
-                    # 2. 逐个读取 Excel
-                    file_count = len(excel_files)
-                    for ef in excel_files:
-                        if self._cancelled:
-                            break
+                        file_count = len(excel_files)
+                        for ef in excel_files:
+                            if self._cancelled:
+                                break
+                            try:
+                                headers, rows = read_excel_data(ef)
+                                if all_headers is None:
+                                    all_headers = headers
+                                    all_rows.extend(rows)
+                                else:
+                                    all_rows.extend(rows)
+                            except Exception as e:
+                                self.file_done.emit(
+                                    os.path.basename(ef), False,
+                                    f"读取失败: {str(e)}"
+                                )
+                                fail += 1
+                                continue
+
+                        self.file_done.emit(
+                            filename, True,
+                            f"成功读取 {file_count} 个 Excel（从压缩包提取）"
+                        )
+                        success += 1
+
+                    elif ext in EXCEL_EXTS:
+                        # ── 直接 Excel 文件 ──
                         try:
-                            headers, rows = read_excel_data(ef)
+                            headers, rows = read_excel_data(file_path)
                             if all_headers is None:
                                 all_headers = headers
                                 all_rows.extend(rows)
                             else:
-                                # 只追加数据行（跳过表头）
                                 all_rows.extend(rows)
                         except Exception as e:
-                            self.file_done.emit(
-                                os.path.basename(ef), False,
-                                f"读取失败: {str(e)}"
-                            )
+                            self.file_done.emit(filename, False, f"读取失败: {str(e)}")
                             fail += 1
                             continue
 
-                    self.file_done.emit(
-                        filename, True,
-                        f"成功读取 {file_count} 个 Excel ({len(excel_files)} 个文件)"
-                    )
-                    success += 1
+                        self.file_done.emit(
+                            filename, True,
+                            f"成功读取（直接 Excel 文件）"
+                        )
+                        success += 1
+
+                    else:
+                        self.file_done.emit(filename, False, "不支持的文件格式")
+                        fail += 1
 
                 except ImportError as e:
                     self.file_done.emit(filename, False, str(e))
@@ -231,7 +257,7 @@ class ExcelMergeWorker(QThread):
                     self.file_done.emit(filename, False, f"处理失败: {str(e)}")
                     fail += 1
 
-            # 3. 写入合并结果
+            # 写入合并结果
             if all_headers is not None and all_rows:
                 try:
                     merge_and_write(all_headers, all_rows, self.output_path)
@@ -243,6 +269,88 @@ class ExcelMergeWorker(QThread):
                 pass
 
         bus.merge_all_done.emit(success, fail)
+
+class OcrWorker(QThread):
+    """批量图片 OCR 识别线程"""
+    file_progress = pyqtSignal(int, int)          # (current_idx, total)
+    file_done = pyqtSignal(str, bool, str)        # (filename, success, msg)
+    item_progress = pyqtSignal(str, int, int)     # (filename, step, total_steps)
+
+    def __init__(self, files: list[str], output_dir: str,
+                 tesseract_path: str = "", lang: str = "chi_sim+eng",
+                 combine_to_one: bool = False):
+        super().__init__()
+        self.files = files
+        self.output_dir = output_dir
+        self.tesseract_path = tesseract_path
+        self.lang = lang
+        self.combine_to_one = combine_to_one  # 是否合并为一个 txt
+        self._cancelled = False
+
+    def cancel(self):
+        """协作式取消"""
+        self._cancelled = True
+
+    def run(self):
+        from src.modules.ocr_recognizer import recognize_image, save_text_to_file
+        from src.database import log_ocr
+
+        total = len(self.files)
+        success = fail = 0
+        all_texts: list[tuple[str, str]] = []  # (filename, text)
+
+        for i, fp in enumerate(self.files):
+            if self._cancelled:
+                break
+            self.file_progress.emit(i + 1, total)
+            filename = os.path.basename(fp)
+
+            try:
+                def _on_progress(step: int, steps: int):
+                    self.item_progress.emit(filename, step, steps)
+
+                text = recognize_image(
+                    fp,
+                    tesseract_path=self.tesseract_path,
+                    lang=self.lang,
+                    progress_callback=_on_progress,
+                )
+                self.item_progress.emit(filename, 1, 1)
+
+                if self.combine_to_one:
+                    all_texts.append((filename, text))
+                    self.file_done.emit(filename, True,
+                        f"识别完成（{len(text)} 字符，待合并）")
+                else:
+                    # 每个图片单独保存 .txt
+                    base = os.path.splitext(filename)[0]
+                    txt_path = os.path.join(self.output_dir, f"{base}.txt")
+                    save_text_to_file(text, txt_path)
+                    self.file_done.emit(filename, True,
+                        f"识别完成（{len(text)} 字符）→ {base}.txt")
+
+                log_ocr(filename, fp, len(text), text, self.lang)
+                success += 1
+
+            except Exception as e:
+                self.file_done.emit(filename, False, f"失败: {str(e)}")
+                fail += 1
+
+        # 如果选择合并模式，写入一个合并文件
+        if self.combine_to_one and all_texts:
+            try:
+                combined_path = os.path.join(self.output_dir, "OCR合并结果.txt")
+                lines = []
+                for fname, txt in all_texts:
+                    lines.append(f"===== {fname} =====")
+                    lines.append(txt)
+                    lines.append("")
+                save_text_to_file("\n".join(lines), combined_path)
+            except Exception as e:
+                pass  # 合并失败不影响单个结果
+
+        bus.ocr_all_done.emit(success, fail)
+
 
 class RecordWorker(QThread):
     """

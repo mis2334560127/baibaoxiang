@@ -1,10 +1,10 @@
 """
-百宝箱 - 批量解压合并 Excel 模块
+百宝箱 - 批量合并 Excel 模块
 
 功能：
-  1. 从压缩包（.zip / .rar / .7z）中提取 Excel 文件
-  2. 读取所有 Excel 数据（假设格式一致）
-  3. 合并写入到单个 Excel 文件
+  1. 支持直接添加 .xlsx / .xls / .xlsm 文件
+  2. 也支持从压缩包（.zip / .rar / .7z）中提取 Excel 文件
+  3. 读取所有 Excel 数据（假设格式一致），合并写入到单个 Excel 文件
 """
 import os
 import zipfile
@@ -15,8 +15,11 @@ from pathlib import Path
 # 支持的压缩包格式 → 扩展名集合
 ARCHIVE_EXTS = {'.zip', '.rar', '.7z'}
 
-# Excel 扩展名
+# Excel 扩展名（直接支持的 Excel 文件格式 + 压缩包内提取的格式）
 EXCEL_EXTS = {'.xlsx', '.xls', '.xlsm'}
+
+# 所有支持的文件扩展名（压缩包 + 直接 Excel 文件）
+ALL_SUPPORTED_EXTS = ARCHIVE_EXTS | EXCEL_EXTS
 
 
 def extract_excel_from_archive(archive_path: str, temp_dir: str) -> list[str]:

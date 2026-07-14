@@ -45,6 +45,11 @@ class SignalBus(QObject):
     merge_file_done = pyqtSignal(str, bool, str)
     merge_all_done = pyqtSignal(int, int)
 
+    # OCR识别进度
+    ocr_progress = pyqtSignal(int, int)          # (current, total)
+    ocr_file_done = pyqtSignal(str, bool, str)   # (filename, success, msg)
+    ocr_all_done = pyqtSignal(int, int)           # (success_count, fail_count)
+
     # 历史记录刷新
     history_updated = pyqtSignal()
 

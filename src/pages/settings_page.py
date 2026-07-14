@@ -12,6 +12,8 @@ from PyQt6.QtCore import Qt, pyqtSlot
 
 from src.config import AppConfig, THEMES, get_config, reload_config
 from src.signals import bus
+from src.modules.screen_recorder import _is_valid_ffmpeg
+from src.modules.ocr_recognizer import is_valid_tesseract
 
 
 class SettingsPage(QWidget):
@@ -100,6 +102,16 @@ class SettingsPage(QWidget):
         ffmpeg_row.addWidget(btn_ffmpeg)
         path_lay.addLayout(ffmpeg_row)
 
+        tess_row = QHBoxLayout()
+        tess_row.addWidget(QLabel("Tesseract 路径:"))
+        self.tesseract_input = QLineEdit()
+        self.tesseract_input.setPlaceholderText("可选（降级方案），默认使用 PaddleOCR")
+        tess_row.addWidget(self.tesseract_input)
+        btn_tesseract = QPushButton("浏览")
+        btn_tesseract.clicked.connect(self._browse_tesseract)
+        tess_row.addWidget(btn_tesseract)
+        path_lay.addLayout(tess_row)
+
         sl.addWidget(path_group)
 
         # === 广告位配置 ===
@@ -175,6 +187,7 @@ class SettingsPage(QWidget):
         """从配置加载值到 UI"""
         self.output_dir_input.setText(self._config.get_output_dir())
         self.ffmpeg_input.setText(self._config.ffmpeg_path)
+        self.tesseract_input.setText(self._config.ocr_tesseract_path)
         self.ad_enabled_chk.setChecked(self._config.ad_enabled)
         self.ad_api_input.setText(self._config.ad_api_url)
         self.ad_key_input.setText(self._config.ad_api_key)
@@ -216,6 +229,13 @@ class SettingsPage(QWidget):
         if file:
             self.ffmpeg_input.setText(file)
 
+    def _browse_tesseract(self):
+        file, _ = QFileDialog.getOpenFileName(
+            self, "选择 Tesseract OCR 可执行文件", "",
+            "可执行文件 (*.exe);;所有文件 (*.*)")
+        if file:
+            self.tesseract_input.setText(file)
+
     def _save_settings(self):
         """保存全部设置"""
         # 主题
@@ -229,7 +249,25 @@ class SettingsPage(QWidget):
 
         # 路径
         self._config.output_dir = self.output_dir_input.text()
-        self._config.ffmpeg_path = self.ffmpeg_input.text()
+        ffmpeg_path = self.ffmpeg_input.text().strip()
+        self._config.ffmpeg_path = ffmpeg_path
+
+        # 如果用户填写了自定义 FFmpeg 路径，进行有效性提示
+        if ffmpeg_path and not _is_valid_ffmpeg(ffmpeg_path):
+            QMessageBox.warning(
+                self, "FFmpeg 路径无效",
+                "填写的 FFmpeg 路径不是有效的 Windows 可执行文件，\n"
+                "录屏功能可能无法使用。请重新下载或留空使用自动查找。"
+            )
+
+        tess_path = self.tesseract_input.text().strip()
+        self._config.ocr_tesseract_path = tess_path
+        if tess_path and not is_valid_tesseract(tess_path):
+            QMessageBox.warning(
+                self, "Tesseract 路径无效",
+                "填写的 Tesseract 路径不是有效的可执行文件，\n"
+                "OCR 功能可能无法使用。请重新安装或留空使用自动查找。"
+            )
 
         # 广告
         self._config.ad_enabled = self.ad_enabled_chk.isChecked()

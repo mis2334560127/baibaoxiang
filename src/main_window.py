@@ -21,6 +21,7 @@ from src.pages.recorder_page import RecorderPage
 from src.pages.guide_page import GuidePage
 from src.pages.settings_page import SettingsPage
 from src.pages.excel_merge_page import ExcelMergePage
+from src.pages.ocr_page import OcrPage
 
 # 侧边栏导航项配置
 NAV_ITEMS = [
@@ -29,6 +30,7 @@ NAV_ITEMS = [
     {"id": "pdf2word",     "icon": "📄", "label": "PDF 转 Word",  "tip": "将 PDF 文档转换为可编辑 Word"},
     {"id": "recorder",     "icon": "🎬", "label": "屏幕录制",     "tip": "全屏/区域录制，输出 MP4"},
     {"id": "excel_merge",  "icon": "📊", "label": "Excel 合并",   "tip": "批量解压压缩包并合并 Excel 数据"},
+    {"id": "ocr",          "icon": "🔍", "label": "图片 OCR",     "tip": "批量识别图片中的文字并输出 TXT"},
     {"id": "guide",        "icon": "📖", "label": "使用指南",     "tip": "安装步骤、操作说明、常见问题"},
     {"id": "settings",     "icon": "⚙️", "label": "系统设置",    "tip": "主题、路径、广告位配置"},
 ]
@@ -187,6 +189,7 @@ class MainWindow(QMainWindow):
         self._pages["pdf2word"] = PdfWordPage()
         self._pages["recorder"] = RecorderPage()
         self._pages["excel_merge"] = ExcelMergePage()
+        self._pages["ocr"] = OcrPage()
         self._pages["guide"] = GuidePage()
         self._pages["settings"] = SettingsPage()
 

@@ -1,6 +1,6 @@
 """
-百宝箱 - 批量解压合并 Excel 页面
-拖拽压缩包 → 自动提取 Excel → 合并到单个文件
+百宝箱 - 批量合并 Excel 页面
+支持直接添加 Excel 文件，也支持从压缩包中提取 Excel → 合并到单个文件
 """
 import os
 from PyQt6.QtWidgets import (
@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSlot
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 
-from src.modules.excel_merger import ARCHIVE_EXTS
+from src.modules.excel_merger import ALL_SUPPORTED_EXTS
 from src.worker_threads import ExcelMergeWorker
 from src.config import get_config
 from src.signals import bus
@@ -42,9 +42,9 @@ class ExcelMergePage(QWidget):
 
         # === 拖拽上传区 ===
         self.drop_zone = QLabel(
-            "📦  拖拽压缩包到此处，或点击选择文件\n"
-            "支持 .zip / .rar / .7z 格式\n"
-            "压缩包内的所有 .xlsx / .xls 文件将被提取并合并"
+            "📦  拖拽文件到此处，或点击选择文件\n"
+            "支持 .xlsx / .xls / .xlsm 直接合并\n"
+            "也支持 .zip / .rar / .7z（自动提取压缩包内的 Excel）"
         )
         self.drop_zone.setObjectName("dropZone")
         self.drop_zone.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -56,7 +56,7 @@ class ExcelMergePage(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setSpacing(10)
 
-        self.btn_add = QPushButton("📦 添加压缩包")
+        self.btn_add = QPushButton("📦 添加文件")
         self.btn_add.clicked.connect(self._add_files)
         self.btn_clear = QPushButton("清空列表")
         self.btn_clear.setProperty("class", "outline-btn")
@@ -66,7 +66,7 @@ class ExcelMergePage(QWidget):
         toolbar.addWidget(self.btn_clear)
         toolbar.addStretch()
 
-        self.file_count_label = QLabel("已添加 0 个压缩包")
+        self.file_count_label = QLabel("已添加 0 个文件")
         self.file_count_label.setStyleSheet("color: #5A6B85;")
         toolbar.addWidget(self.file_count_label)
 
@@ -117,7 +117,7 @@ class ExcelMergePage(QWidget):
         layout.addWidget(self.progress_bar)
 
         # === 日志输出 ===
-        self.log_output = QLabel("等待添加压缩包...")
+        self.log_output = QLabel("等待添加文件...")
         self.log_output.setObjectName("logOutput")
         self.log_output.setWordWrap(True)
         self.log_output.setMinimumHeight(100)
@@ -130,7 +130,7 @@ class ExcelMergePage(QWidget):
     # ---- 文件操作 ----
 
     def _add_files(self):
-        filter_str = "压缩包 (*.zip *.rar *.7z);;ZIP 文件 (*.zip);;RAR 文件 (*.rar);;7Z 文件 (*.7z);;所有文件 (*.*)"
+        filter_str = "所有支持格式 (*.xlsx *.xls *.xlsm *.zip *.rar *.7z);;Excel 文件 (*.xlsx *.xls *.xlsm);;压缩包 (*.zip *.rar *.7z);;所有文件 (*.*)"
         files, _ = QFileDialog.getOpenFileNames(self, "选择压缩包", "", filter_str)
         if files:
             self._append_files(files)
@@ -139,7 +139,7 @@ class ExcelMergePage(QWidget):
         new_count = 0
         for fp in files:
             ext = os.path.splitext(fp)[1].lower()
-            if ext in ARCHIVE_EXTS and fp not in self._files:
+            if ext in ALL_SUPPORTED_EXTS and fp not in self._files:
                 self._files.append(fp)
                 size_mb = os.path.getsize(fp) / (1024 * 1024)
                 self.file_list.addItem(
@@ -149,7 +149,7 @@ class ExcelMergePage(QWidget):
         self._update_file_count()
         self.btn_merge.setEnabled(len(self._files) > 0)
         if new_count > 0:
-            self._append_log(f"✅ 添加了 {new_count} 个压缩包")
+            self._append_log(f"✅ 添加了 {new_count} 个文件")
 
     def _clear_files(self):
         self._files.clear()
@@ -161,7 +161,7 @@ class ExcelMergePage(QWidget):
     def _update_file_count(self):
         total_mb = sum(os.path.getsize(f) / (1024 * 1024) for f in self._files)
         self.file_count_label.setText(
-            f"已添加 {len(self._files)} 个压缩包  ({total_mb:.1f} MB)"
+            f"已添加 {len(self._files)} 个文件  ({total_mb:.1f} MB)"
         )
 
     def _choose_output(self):
@@ -195,7 +195,7 @@ class ExcelMergePage(QWidget):
         files = []
         for url in event.mimeData().urls():
             path = url.toLocalFile()
-            if os.path.isfile(path) and os.path.splitext(path)[1].lower() in ARCHIVE_EXTS:
+            if os.path.isfile(path) and os.path.splitext(path)[1].lower() in ALL_SUPPORTED_EXTS:
                 files.append(path)
         if files:
             self._append_files(files)
@@ -207,7 +207,7 @@ class ExcelMergePage(QWidget):
 
     def _start_merge(self):
         if not self._files:
-            QMessageBox.warning(self, "提示", "请先添加压缩包文件。")
+            QMessageBox.warning(self, "提示", "请先添加 Excel 或压缩包文件。")
             return
 
         output_path = self.out_path_label.text()
@@ -222,7 +222,7 @@ class ExcelMergePage(QWidget):
         self.progress_bar.setVisible(True)
         self.progress_bar.setMaximum(len(self._files))
         self.progress_bar.setValue(0)
-        self._append_log(f"🚀 开始处理 {len(self._files)} 个压缩包...")
+        self._append_log(f"🚀 开始处理 {len(self._files)} 个文件...")
         self._append_log(f"📤 输出文件：{output_path}")
 
         self._worker = ExcelMergeWorker(self._files, output_path)
@@ -251,8 +251,8 @@ class ExcelMergePage(QWidget):
         self._set_ui_running(False)
         total = success + fail
         if fail == 0:
-            self._append_log(f"🎉 全部完成！成功处理 {success} 个压缩包。")
-            QMessageBox.information(self, "完成", f"成功合并 {success} 个压缩包中的数据！\n\n输出文件：{self.out_path_label.text()}")
+            self._append_log(f"🎉 全部完成！成功处理 {success} 个文件。")
+            QMessageBox.information(self, "完成", f"成功合并 {success} 个文件中的数据！\n\n输出文件：{self.out_path_label.text()}")
         else:
             self._append_log(f"⚠️ 处理完成：成功 {success} 个，失败 {fail} 个。")
 

@@ -18,6 +18,22 @@ import threading
 from pathlib import Path
 
 
+
+def _is_valid_ffmpeg(path: str) -> bool:
+    """
+    校验给定路径是否为有效的 Windows PE 可执行文件（避免执行 HTML 错误页面
+    或损坏文件导致 WinError 193）。
+    """
+    if not path or not os.path.isfile(path):
+        return False
+    size = os.path.getsize(path)
+    if size < 5 * 1024 * 1024:  # 至少 5 MB，正常 ffmpeg.exe 约 100 MB+
+        return False
+    with open(path, "rb") as f:
+        header = f.read(2)
+    return header == b"MZ"
+
+
 def _find_ffmpeg(custom_path: str = "") -> str:
     """
     查找 FFmpeg 可执行文件。
@@ -27,9 +43,11 @@ def _find_ffmpeg(custom_path: str = "") -> str:
     2. 项目内置 ffmpeg 目录
     3. 常见安装路径
     4. 系统 PATH
+
+    仅返回通过 _is_valid_ffmpeg 校验的有效文件路径。
     """
     # 0. 用户自定义路径
-    if custom_path and os.path.isfile(custom_path):
+    if custom_path and _is_valid_ffmpeg(custom_path):
         return custom_path
 
     # 1. 项目自带 ffmpeg（打包时可能嵌入）
@@ -39,7 +57,7 @@ def _find_ffmpeg(custom_path: str = "") -> str:
     else:
         app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     bundled = os.path.join(app_dir, "ffmpeg", "ffmpeg.exe")
-    if os.path.isfile(bundled):
+    if _is_valid_ffmpeg(bundled):
         return bundled
 
     # 2. 常见安装路径
@@ -52,16 +70,16 @@ def _find_ffmpeg(custom_path: str = "") -> str:
         r"C:\ffmpeg\bin\ffmpeg.exe",
     ]
     for p in common_paths:
-        if os.path.isfile(p):
+        if _is_valid_ffmpeg(p):
             return p
 
     # 3. 系统 PATH
     import shutil
     found = shutil.which("ffmpeg")
-    if found:
+    if found and _is_valid_ffmpeg(found):
         return found
 
-    return ""  # 未找到，返回空字符串
+    return ""  # 未找到有效 FFmpeg
 
 
 def _get_screen_size():
@@ -143,15 +161,19 @@ def record_screen(
     ffmpeg = _find_ffmpeg(ffmpeg_path)
     if not ffmpeg:
         raise RuntimeError(
-            "未找到 FFmpeg，屏幕录制功能需要 FFmpeg 编码视频。\n\n"
-            "请按以下步骤安装：\n"
-            "1. 下载 FFmpeg: https://ffmpeg.org/download.html\n"
-            '   （推荐 Windows 版本: gyan.dev → ffmpeg-release-full.7z）\n'
-            '2. 解压到如 D:\\ffmpeg\\ 目录（路径不要含中文）\n'
-            "3. 在百宝箱「设置页面」中指定 ffmpeg.exe 的完整路径\n"
-            "   如: D:\\ffmpeg\\bin\\ffmpeg.exe\n\n"
-            "或使用 winget 一键安装:\n"
-            "   winget install Gyan.FFmpeg"
+            "未找到有效的 FFmpeg 可执行文件，屏幕录制需要 FFmpeg 编码视频。\n\n"
+            "解决方式：\n"
+            "1. 在项目根目录运行：python build.py --download-ffmpeg\n"
+            "   将自动下载 FFmpeg 到 ffmpeg/ffmpeg.exe\n"
+            "2. 或在「设置」页面手动填写有效的 ffmpeg.exe 完整路径\n\n"
+            "如果已配置自定义路径但看到此提示，说明该文件已损坏或不是有效的 Windows 可执行文件。"
+        )
+
+    # 启动前再次校验（防御性检查）
+    if not _is_valid_ffmpeg(ffmpeg):
+        raise RuntimeError(
+            f"找到的 FFmpeg 文件无效或已损坏：{ffmpeg}\n"
+            "请重新下载或更换有效的 ffmpeg.exe 路径。"
         )
 
     if region:

@@ -9,8 +9,10 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 # ---- 基础路径 ----
+# 打包后使用 %APPDATA%/BaibaoBOX 持久化数据，避免 PyInstaller 临时目录丢失
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
+_USER_DATA_DIR = Path(os.path.expandvars("%APPDATA%")) / "BaibaoBOX"
+DATA_DIR = _USER_DATA_DIR
 CONFIG_FILE = DATA_DIR / "config.json"
 LOG_DIR = DATA_DIR / "logs"
 CACHE_DIR = DATA_DIR / "cache"
@@ -60,6 +62,9 @@ class AppConfig:
     pdf_preserve_formatting: bool = True
     pdf_preserve_images: bool = True
     pdf_ocr_lang: str = "chi_sim+eng"  # OCR 识别语言
+    # OCR 默认参数
+    ocr_tesseract_path: str = ""       # Tesseract 路径（空=自动查找）
+    ocr_lang: str = "chi_sim+eng"      # OCR 语言
 
     @classmethod
     def load(cls) -> "AppConfig":

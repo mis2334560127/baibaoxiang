@@ -8,7 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from contextlib import contextmanager
 
-DB_FILE = Path(__file__).resolve().parent.parent / "data" / "baibaobox.db"
+# 数据目录：与 config.py 保持一致，使用 %APPDATA%/BaibaoBOX
+DB_FILE = Path(os.path.expandvars("%APPDATA%")) / "BaibaoBOX" / "baibaobox.db"
 
 # ---- SQL 建表 ----
 SCHEMA = """
@@ -55,9 +56,21 @@ CREATE TABLE IF NOT EXISTS ad_cache (
     expires_at  TEXT
 );
 
+CREATE TABLE IF NOT EXISTS ocr_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_name   TEXT    NOT NULL,
+    file_path   TEXT    NOT NULL,
+    text_length INTEGER,
+    text_preview TEXT,
+    lang        TEXT    DEFAULT 'chi_sim+eng',
+    status      TEXT    DEFAULT 'success',
+    created_at  TEXT    NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_compress_ts ON compress_history(created_at);
 CREATE INDEX IF NOT EXISTS idx_convert_ts  ON convert_history(created_at);
 CREATE INDEX IF NOT EXISTS idx_record_ts   ON record_history(created_at);
+CREATE INDEX IF NOT EXISTS idx_ocr_ts      ON ocr_history(created_at);
 """
 
 
@@ -117,6 +130,18 @@ def log_record(file_name: str, file_path: str, duration_sec: int,
         )
 
 
+def log_ocr(file_name: str, file_path: str, text_length: int,
+            text_preview: str = "", lang: str = "chi_sim+eng",
+            status: str = "success"):
+    with db_session() as conn:
+        conn.execute(
+            "INSERT INTO ocr_history (file_name,file_path,text_length,text_preview,lang,status,created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (file_name, file_path, text_length, text_preview[:100],
+             lang, status, datetime.now().isoformat())
+        )
+
+
 # ---- 查询接口 ----
 
 def get_recent_compress(limit: int = 20) -> list[dict]:
@@ -143,12 +168,21 @@ def get_recent_records(limit: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_recent_ocr(limit: int = 20) -> list[dict]:
+    with db_session() as conn:
+        rows = conn.execute(
+            "SELECT * FROM ocr_history ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_summary_stats() -> dict:
     """首页统计：总处理文件数、节省空间等"""
     with db_session() as conn:
         total_compress = conn.execute("SELECT COUNT(*) as n FROM compress_history WHERE status='success'").fetchone()["n"]
         total_convert = conn.execute("SELECT COUNT(*) as n FROM convert_history WHERE status='success'").fetchone()["n"]
         total_record = conn.execute("SELECT COUNT(*) as n FROM record_history WHERE status='success'").fetchone()["n"]
+        total_ocr = conn.execute("SELECT COUNT(*) as n FROM ocr_history WHERE status='success'").fetchone()["n"]
         row = conn.execute(
             "SELECT SUM(orig_size_kb) as orig, SUM(final_size_kb) as final FROM compress_history WHERE status='success'"
         ).fetchone()
@@ -157,5 +191,6 @@ def get_summary_stats() -> dict:
         "total_compress": total_compress,
         "total_convert": total_convert,
         "total_record": total_record,
+        "total_ocr": total_ocr,
         "saved_mb": round(saved_kb / 1024, 1),
     }

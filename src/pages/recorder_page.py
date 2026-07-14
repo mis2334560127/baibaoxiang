@@ -15,7 +15,7 @@ from src.worker_threads import RecordWorker
 from src.config import AppConfig, get_config
 from src.signals import bus
 from src.database import get_recent_records
-from src.modules.screen_recorder import _find_ffmpeg
+from src.modules.screen_recorder import _find_ffmpeg, _is_valid_ffmpeg
 
 
 class RecorderPage(QWidget):
@@ -171,21 +171,26 @@ class RecorderPage(QWidget):
         if self._worker and self._worker.isRunning():
             return
 
-        # 验证 FFmpeg
+        # 验证 FFmpeg：优先提示用户已配置的无效路径
         ffmpeg_path = self._config.ffmpeg_path or ""
+        if ffmpeg_path and not _is_valid_ffmpeg(ffmpeg_path):
+            QMessageBox.critical(
+                self, "FFmpeg 路径无效",
+                f"设置中指定的 FFmpeg 文件无效或已损坏：\n{ffmpeg_path}\n\n"
+                "请重新下载 FFmpeg，或在「设置」页面清空该路径以使用自动查找。\n\n"
+                "开发环境可运行：python build.py --download-ffmpeg"
+            )
+            return
+
         found = _find_ffmpeg(ffmpeg_path)
         if not found:
             QMessageBox.critical(
                 self, "FFmpeg 未找到",
-                "屏幕录制需要 FFmpeg 来编码视频，但未在系统中找到它。\n\n"
-                "请按以下步骤安装：\n"
-                "1. 下载 FFmpeg: https://ffmpeg.org/download.html\n"
-                '   （推荐 Windows 版本: gyan.dev → ffmpeg-release-full.7z）\n'
-                "2. 解压到如 D:\\ffmpeg\\ 目录\n"
-                "3. 打开「设置」页面，在「FFmpeg 路径」中填写完整路径\n"
-                '   如: D:\\ffmpeg\\bin\\ffmpeg.exe\n\n'
-                "或使用 winget 一键安装:\n"
-                "   winget install Gyan.FFmpeg"
+                "屏幕录制需要 FFmpeg 来编码视频，但未找到有效的可执行文件。\n\n"
+                "开发环境请运行以下命令自动下载：\n"
+                "   python build.py --download-ffmpeg\n\n"
+                "如需使用系统已安装的 FFmpeg，请在「设置」页面\n"
+                "手动填写有效的 ffmpeg.exe 完整路径。"
             )
             return
 

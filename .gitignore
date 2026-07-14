@@ -1,0 +1,28 @@
+# 虚拟环境
+.venv/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 构建产物
+build/
+dist/
+*.spec
+
+# IDE
+.vscode/
+.idea/
+
+# FFmpeg 二进制（构建时自动下载，不入仓库）
+ffmpeg/
+ffmpeg_temp*.zip
+
+# 数据文件（运行时生成）
+data/*.db
+data/*.json
+
+# 临时文件
+*.tmp
+*.log
