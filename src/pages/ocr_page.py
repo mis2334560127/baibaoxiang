@@ -3,6 +3,7 @@
 支持批量拖拽/选择图片，使用 Tesseract OCR 识别文字并输出 .txt 文件。
 """
 import os
+import time
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -46,6 +47,8 @@ class OcrPage(QWidget):
         self._files: list[str] = []
         self._worker: OcrWorker | None = None
         self._config = get_config()
+        self._start_times: dict[str, float] = {}
+        self._elapsed_list: list[float] = []
 
         self._setup_ui()
         self._connect_signals()
@@ -308,6 +311,10 @@ class OcrPage(QWidget):
         self._config.ocr_lang = lang
         self._config.save()
 
+        # 重置 ETA 追踪
+        self._start_times.clear()
+        self._elapsed_list.clear()
+
         # 更新 UI 状态
         self._set_ui_running(True)
         self.log_area.clear()
@@ -359,7 +366,15 @@ class OcrPage(QWidget):
     def _on_file_progress(self, current: int, total: int):
         self.progress_bar.setMaximum(total)
         self.progress_bar.setValue(current)
-        self.progress_label.setText(f"正在处理：{current} / {total}")
+        msg = f"正在处理：{current} / {total}"
+        if self._elapsed_list and current > 0:
+            avg = sum(self._elapsed_list) / len(self._elapsed_list)
+            remaining = avg * (total - current)
+            if remaining >= 60:
+                msg += f" | 预计剩余约 {remaining/60:.0f} 分 {remaining%60:.0f} 秒"
+            else:
+                msg += f" | 预计剩余约 {remaining:.0f} 秒"
+        self.progress_label.setText(msg)
 
     @pyqtSlot(str, bool, str)
     def _on_file_done(self, filename: str, success: bool, msg: str):
@@ -368,6 +383,14 @@ class OcrPage(QWidget):
 
     @pyqtSlot(str, int, int)
     def _on_item_progress(self, filename: str, step: int, total: int):
+        if step <= 1:
+            self._start_times[filename] = time.time()
+        if step >= total:
+            start = self._start_times.pop(filename, None)
+            if start:
+                self._elapsed_list.append(time.time() - start)
+                if len(self._elapsed_list) > 20:
+                    self._elapsed_list.pop(0)
         self.progress_label.setText(f"正在识别：{filename} ({step}/{total})")
 
     @pyqtSlot(int, int)

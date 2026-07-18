@@ -33,13 +33,6 @@ class ExcelMergePage(QWidget):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(16)
 
-        # === 广告位 ===
-        ad = QLabel("📢  广告位（预留）")
-        ad.setObjectName("adBanner")
-        ad.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ad.setFixedHeight(44)
-        layout.addWidget(ad)
-
         # === 拖拽上传区 ===
         self.drop_zone = QLabel(
             "📦  拖拽文件到此处，或点击选择文件\n"
@@ -271,7 +264,7 @@ class ExcelMergePage(QWidget):
 
     def _append_log(self, text: str):
         current = self.log_output.text()
-        if current == "等待添加压缩包...":
+        if current == "等待添加压缩包..." or current == "等待添加文件...":
             current = ""
         # 限制日志行数，避免过多
         lines = current.split("\n") if current else []

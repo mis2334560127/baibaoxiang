@@ -1,6 +1,6 @@
 """
 百宝箱 (BaibaoBOX) - 主入口
-Windows 桌面效率小工具 · 图片压缩 / PDF 转 Word / 屏幕录制
+Windows 桌面效率小工具 · 图片压缩 / PDF 转 Word / OCR 识别 / Excel 合并
 """
 import sys
 import os
@@ -41,7 +41,7 @@ def main():
     except Exception:
         pass
 
-    # 在 aboutToQuit 时做全局清理（防止孤儿 FFmpeg 进程）
+    # 在 aboutToQuit 时做全局清理（停止广告拉取线程等）
     def _on_quit():
         try:
             from src.modules.ad_manager import AdManager

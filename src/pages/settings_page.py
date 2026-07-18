@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QScrollArea, QLineEdit, QSpinBox, QCheckBox, QFileDialog,
     QButtonGroup, QRadioButton, QGroupBox, QMessageBox
 )
-from PyQt6.QtCore import Qt, pyqtSlot
+from PyQt6.QtCore import Qt, QTimer
 
 from src.config import AppConfig, THEMES, get_config, reload_config
 from src.signals import bus
@@ -95,7 +95,11 @@ class SettingsPage(QWidget):
         tess_row.addWidget(QLabel("Tesseract 路径:"))
         self.tesseract_input = QLineEdit()
         self.tesseract_input.setPlaceholderText("可选（降级方案），默认使用 PaddleOCR")
+        self.tesseract_input.editingFinished.connect(self._validate_tesseract_path)
         tess_row.addWidget(self.tesseract_input)
+        self.tesseract_status = QLabel("")
+        self.tesseract_status.setFixedWidth(20)
+        tess_row.addWidget(self.tesseract_status)
         btn_tesseract = QPushButton("浏览")
         btn_tesseract.clicked.connect(self._browse_tesseract)
         tess_row.addWidget(btn_tesseract)
@@ -176,6 +180,7 @@ class SettingsPage(QWidget):
         """从配置加载值到 UI"""
         self.output_dir_input.setText(self._config.get_output_dir())
         self.tesseract_input.setText(self._config.ocr_tesseract_path)
+        QTimer.singleShot(100, self._validate_tesseract_path)
         self.ad_enabled_chk.setChecked(self._config.ad_enabled)
         self.ad_api_input.setText(self._config.ad_api_url)
         self.ad_key_input.setText(self._config.ad_api_key)
@@ -216,6 +221,16 @@ class SettingsPage(QWidget):
             "可执行文件 (*.exe);;所有文件 (*.*)")
         if file:
             self.tesseract_input.setText(file)
+            self._validate_tesseract_path()
+
+    def _validate_tesseract_path(self):
+        """即时校验 Tesseract 路径有效性"""
+        path = self.tesseract_input.text().strip()
+        if not path:
+            self.tesseract_status.setText("")
+            return
+        valid = is_valid_tesseract(path)
+        self.tesseract_status.setText("✅" if valid else "❌")
 
     def _save_settings(self):
         """保存全部设置"""

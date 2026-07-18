@@ -1,6 +1,6 @@
 """
 百宝箱 后台工作线程
-所有耗时操作（压缩、转换、录制、广告请求）均放入 QThread 执行，
+所有耗时操作（压缩、转换、OCR、Excel 合并、广告请求）均放入 QThread 执行，
 避免阻塞 UI 线程。
 """
 import os
@@ -21,7 +21,8 @@ class CompressWorker(QThread):
 
     def __init__(self, files: list[str], target_kb: int = 500,
                  quality: int = 75, mode: str = "size",
-                 output_dir: str = "", max_width: int = 0, max_height: int = 0):
+                 output_dir: str = "", max_width: int = 0, max_height: int = 0,
+                 target_ext: str = ""):
         super().__init__()
         self.files = files
         self.target_kb = target_kb
@@ -30,6 +31,7 @@ class CompressWorker(QThread):
         self.output_dir = output_dir
         self.max_width = max_width
         self.max_height = max_height
+        self.target_ext = target_ext
         self._cancelled = False
 
     def cancel(self):
@@ -58,6 +60,7 @@ class CompressWorker(QThread):
                 result_path = compress_image(
                     fp, self.target_kb, self.quality, self.mode, self.output_dir,
                     self.max_width, self.max_height,
+                    target_ext=self.target_ext,
                     progress_callback=_on_progress,
                 )
                 self.item_progress.emit(filename, 1, 1)  # 完成
@@ -210,6 +213,24 @@ class ExcelMergeWorker(QThread):
                                     all_headers = headers
                                     all_rows.extend(rows)
                                 else:
+                                    if headers != all_headers:
+                                        missing = set(all_headers) - set(headers)
+                                        extra = set(headers) - set(all_headers)
+                                        parts = []
+                                        if missing:
+                                            parts.append(f"缺少列: {', '.join(missing)}")
+                                        if extra:
+                                            parts.append(f"多余列: {', '.join(extra)}")
+                                        warn = " ⚠️ 表头不一致！" + ("; ".join(parts)) if parts else " ⚠️ 表头不一致！"
+                                        self.file_done.emit(
+                                            os.path.basename(ef), True,
+                                            f"已读取（{len(rows)} 行，追加）" + warn
+                                        )
+                                    else:
+                                        self.file_done.emit(
+                                            os.path.basename(ef), True,
+                                            f"成功读取（{len(rows)} 行）"
+                                        )
                                     all_rows.extend(rows)
                             except Exception as e:
                                 self.file_done.emit(
@@ -233,16 +254,27 @@ class ExcelMergeWorker(QThread):
                                 all_headers = headers
                                 all_rows.extend(rows)
                             else:
+                                if headers != all_headers:
+                                    # 检测到表头不一致，发出警告
+                                    missing = set(all_headers) - set(headers)
+                                    extra = set(headers) - set(all_headers)
+                                    parts = []
+                                    if missing:
+                                        parts.append(f"缺少列: {', '.join(missing)}")
+                                    if extra:
+                                        parts.append(f"多余列: {', '.join(extra)}")
+                                    warn = " ⚠️ 表头不一致！" + ("; ".join(parts)) if parts else " ⚠️ 表头不一致！"
+                                    self.file_done.emit(filename, True,
+                                        f"已读取（{len(rows)} 行，追加到末尾）" + warn)
+                                else:
+                                    self.file_done.emit(filename, True,
+                                        f"成功读取（{len(rows)} 行）")
                                 all_rows.extend(rows)
                         except Exception as e:
                             self.file_done.emit(filename, False, f"读取失败: {str(e)}")
                             fail += 1
                             continue
 
-                        self.file_done.emit(
-                            filename, True,
-                            f"成功读取（直接 Excel 文件）"
-                        )
                         success += 1
 
                     else:
@@ -263,9 +295,9 @@ class ExcelMergeWorker(QThread):
                 except Exception as e:
                     bus.merge_all_done.emit(success, fail)
                     return
-            elif all_headers is None:
-                # 没有读取到任何数据
-                pass
+            elif success == 0:
+                # 没有读取到任何有效数据，通过信号通知
+                bus.merge_all_done.emit(0, fail)
 
         bus.merge_all_done.emit(success, fail)
 
@@ -298,6 +330,14 @@ class OcrWorker(QThread):
         success = fail = 0
         all_texts: list[tuple[str, str]] = []  # (filename, text)
 
+        # 计算所有文件的共同父目录，用于保留相对结构
+        if self.files:
+            common_root = os.path.commonpath(self.files)
+            if not os.path.isdir(common_root):
+                common_root = os.path.dirname(common_root)
+        else:
+            common_root = ""
+
         for i, fp in enumerate(self.files):
             if self._cancelled:
                 break
@@ -321,12 +361,16 @@ class OcrWorker(QThread):
                     self.file_done.emit(filename, True,
                         f"识别完成（{len(text)} 字符，待合并）")
                 else:
-                    # 每个图片单独保存 .txt
+                    # 每个图片单独保存 .txt，保留目录结构
+                    rel = os.path.relpath(os.path.dirname(fp), common_root) if common_root else ""
+                    sub_dir = os.path.join(self.output_dir, rel) if rel != "." else self.output_dir
+                    os.makedirs(sub_dir, exist_ok=True)
                     base = os.path.splitext(filename)[0]
-                    txt_path = os.path.join(self.output_dir, f"{base}.txt")
+                    txt_path = os.path.join(sub_dir, f"{base}.txt")
                     save_text_to_file(text, txt_path)
+                    display_rel = os.path.join(rel, f"{base}.txt") if rel != "." else f"{base}.txt"
                     self.file_done.emit(filename, True,
-                        f"识别完成（{len(text)} 字符）→ {base}.txt")
+                        f"识别完成（{len(text)} 字符）→ {display_rel}")
 
                 log_ocr(filename, fp, len(text), text, self.lang)
                 success += 1

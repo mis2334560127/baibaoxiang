@@ -11,6 +11,16 @@ from PIL import Image
 # 支持的图片格式
 SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.bmp', '.webp', '.tiff', '.gif'}
 
+# 可转换的输出格式
+OUTPUT_FORMATS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'}
+FORMAT_LABELS = {
+    '.jpg': 'JPG / JPEG',
+    '.png': 'PNG',
+    '.webp': 'WEBP',
+    '.bmp': 'BMP',
+    '.tiff': 'TIFF',
+}
+
 # 二分搜索精度（KB）
 SIZE_TOLERANCE_KB = 5
 MAX_ITERATIONS = 12
@@ -24,10 +34,11 @@ def compress_image(
     output_dir: str = "",
     max_width: int = 0,
     max_height: int = 0,
+    target_ext: str = "",
     progress_callback: callable = None,
 ) -> str:
     """
-    压缩单张图片。
+    压缩单张图片，支持格式转换。
 
     Args:
         file_path:   源图片路径
@@ -37,6 +48,7 @@ def compress_image(
         output_dir:  输出目录（空则同源目录）
         max_width:   最大宽度（像素），0=不限制
         max_height:  最大高度（像素），0=不限制
+        target_ext:  目标格式扩展名（如 '.jpg', '.png'），空则保持原格式
         progress_callback:  进度回调 callable(step, total_steps)，可为 None
 
     Returns:
@@ -74,37 +86,50 @@ def compress_image(
             rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
         img = rgb_img
 
-    # 确定输出路径
+    # 确定输出路径和格式
     base = os.path.splitext(os.path.basename(file_path))[0]
     out_dir = output_dir or os.path.dirname(file_path)
     os.makedirs(out_dir, exist_ok=True)
 
-    ext = os.path.splitext(file_path)[1].lower()
+    src_ext = os.path.splitext(file_path)[1].lower()
+    # 目标格式：指定 target_ext 则转换，否则保持原格式
+    out_ext = target_ext if target_ext else src_ext
+
+    # JPEG 输出时 RGBA → RGB（JPEG 不支持透明通道）
+    if out_ext in ('.jpg', '.jpeg') and img.mode in ('RGBA', 'P', 'LA'):
+        rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+        if img.mode == 'P':
+            img = img.convert('RGBA')
+        if img.mode == 'RGBA' or img.mode == 'LA':
+            rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+        img = rgb_img
 
     if mode == "quality":
         # ---- 按质量压缩 ----
         _report(1, 2)  # 开始
         # 注意：PNG 为无损格式，quality 参数对其不生效
-        save_kwargs = _get_save_kwargs(ext, quality)
-        out_name = f"{base}_compressed{ext}"
+        save_kwargs = _get_save_kwargs(out_ext, quality)
+        suffix = "_compressed" if out_ext == src_ext else f"_to{out_ext}"
+        out_name = f"{base}{suffix}{out_ext}"
         out_path = os.path.join(out_dir, out_name)
-        _safe_save(img, out_path, ext, save_kwargs)
+        _safe_save(img, out_path, out_ext, save_kwargs)
         _report(2, 2)  # 完成
         return out_path
 
     else:
         # ---- 按目标大小压缩（二分搜索逼近） ----
-        out_name = f"{base}_compressed.jpg"
+        # 目标大小模式始终保存为 JPEG 格式（或其他有损格式支持二分搜索）
+        out_ext = out_ext if out_ext in ('.jpg', '.jpeg', '.webp') else '.jpg'
+        suffix = "_compressed" if out_ext == src_ext else f"_to{out_ext}"
+        out_name = f"{base}{suffix}{out_ext}"
         out_path = os.path.join(out_dir, out_name)
 
         _report(0, MAX_ITERATIONS + 1)  # 开始
+        save_format = 'WEBP' if out_ext == '.webp' else 'JPEG'
 
         # 先在高质量保存一次，检查是否已经足够小
         buf = io.BytesIO()
-        if ext == '.png':
-            img.save(buf, format='JPEG', quality=95, optimize=True)
-        else:
-            img.save(buf, format='JPEG', quality=95, optimize=True)
+        img.save(buf, format=save_format, quality=95, optimize=True)
         if buf.getbuffer().nbytes / 1024 <= target_kb:
             _report(MAX_ITERATIONS + 1, MAX_ITERATIONS + 1)
             with open(out_path, 'wb') as f:
@@ -119,7 +144,7 @@ def compress_image(
                 _report(i + 1, MAX_ITERATIONS)
             mid = (lo + hi) // 2
             buf = io.BytesIO()
-            img.save(buf, format='JPEG', quality=mid, optimize=True)
+            img.save(buf, format=save_format, quality=mid, optimize=True)
             size_kb = buf.getbuffer().nbytes / 1024
 
             if abs(size_kb - target_kb) <= SIZE_TOLERANCE_KB:

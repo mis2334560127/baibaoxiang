@@ -3,15 +3,16 @@
 支持拖拽添加文件、按大小/按质量两种模式、批量处理与进度展示。
 """
 import os
+import time
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
     QListWidget, QListWidgetItem, QProgressBar, QSpinBox, QSlider,
-    QRadioButton, QButtonGroup, QFileDialog, QMessageBox
+    QRadioButton, QButtonGroup, QComboBox, QFileDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt, pyqtSlot, QTimer
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 
-from src.modules.image_compressor import SUPPORTED_FORMATS
+from src.modules.image_compressor import SUPPORTED_FORMATS, OUTPUT_FORMATS, FORMAT_LABELS
 from src.worker_threads import CompressWorker
 from src.config import AppConfig, get_config
 from src.signals import bus
@@ -25,6 +26,8 @@ class CompressPage(QWidget):
         self._files: list[str] = []
         self._worker: CompressWorker | None = None
         self._config = get_config()
+        self._start_times: dict[str, float] = {}  # ETA 追踪
+        self._elapsed_list: list[float] = []
 
         self._setup_ui()
         self._connect_signals()
@@ -33,13 +36,6 @@ class CompressPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(16)
-
-        # === 广告位 ===
-        ad = QLabel("📢  广告位（预留）")
-        ad.setObjectName("adBanner")
-        ad.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ad.setFixedHeight(44)
-        layout.addWidget(ad)
 
         # === 拖拽上传区 ===
         self.drop_zone = QLabel("📁  拖拽图片到此处，或点击选择文件\n支持 JPG / PNG / BMP / WebP / TIFF")
@@ -143,6 +139,18 @@ class CompressPage(QWidget):
             lambda checked: self.size_widget.setVisible(checked))
         self.radio_quality.toggled.connect(
             lambda checked: self.quality_widget.setVisible(checked))
+
+        # === 格式转换区 ===
+        fmt_row = QHBoxLayout()
+        fmt_row.addWidget(QLabel("输出格式:"))
+        self.format_combo = QComboBox()
+        self.format_combo.addItem("保持原格式", "")
+        for ext, label in FORMAT_LABELS.items():
+            self.format_combo.addItem(label, ext)
+        self.format_combo.setFixedWidth(160)
+        fmt_row.addWidget(self.format_combo)
+        fmt_row.addStretch()
+        layout.addLayout(fmt_row)
 
         # === 尺寸限制区 ===
         resize_frame = QFrame()
@@ -319,6 +327,7 @@ class CompressPage(QWidget):
         output_dir = self._config.get_output_dir()
         max_width = self.spin_max_w.value() if self.chk_resize.isChecked() else 0
         max_height = self.spin_max_h.value() if self.chk_resize.isChecked() else 0
+        target_ext = self.format_combo.currentData()
 
         self._worker = CompressWorker(
             files=self._files.copy(),
@@ -328,6 +337,7 @@ class CompressPage(QWidget):
             output_dir=output_dir,
             max_width=max_width,
             max_height=max_height,
+            target_ext=target_ext,
         )
         self._worker.file_progress.connect(self._on_file_progress)
         self._worker.file_done.connect(self._on_file_done)
@@ -339,6 +349,10 @@ class CompressPage(QWidget):
         self.progress_detail.setVisible(True)
         self.progress_bar.setMaximum(len(self._files))
         self.progress_bar.setValue(0)
+
+        # 重置 ETA 追踪
+        self._start_times.clear()
+        self._elapsed_list.clear()
 
         # 持久化当前参数
         self._config.compress_max_width = max_width
@@ -361,12 +375,31 @@ class CompressPage(QWidget):
     @pyqtSlot(int, int)
     def _on_file_progress(self, current: int, total: int):
         self.progress_bar.setValue(current)
-        bus.status_message.emit(f"压缩中 {current}/{total}", 0)
+        msg = f"压缩中 {current}/{total}"
+        # ETA 估算
+        if self._elapsed_list and current > 0:
+            avg = sum(self._elapsed_list) / len(self._elapsed_list)
+            remaining = avg * (total - current)
+            if remaining >= 60:
+                msg += f" | 预计剩余约 {remaining/60:.0f} 分 {remaining%60:.0f} 秒"
+            else:
+                msg += f" | 预计剩余约 {remaining:.0f} 秒"
+        bus.status_message.emit(msg, 0)
 
     @pyqtSlot(str, int, int)
     def _on_item_progress(self, filename: str, current: int, total: int):
         """单文件内部实时进度（二分搜索迭代 / 直接压缩）"""
+        if current <= 1:
+            # 记录开始时间
+            self._start_times[filename] = time.time()
         if current >= total:
+            # 计算耗时并入列
+            start = self._start_times.pop(filename, None)
+            if start:
+                self._elapsed_list.append(time.time() - start)
+                # 只保留最近 20 个样本
+                if len(self._elapsed_list) > 20:
+                    self._elapsed_list.pop(0)
             self.progress_detail.setText(f"✅ {filename} 完成")
         else:
             self.progress_detail.setText(f"⏳ 正在压缩: {filename}  ({current}/{total})")
@@ -401,4 +434,6 @@ class CompressPage(QWidget):
 
     def _append_log(self, text: str):
         current = self.log_output.text() or ""
-        self.log_output.setText(current + "\n" + text)
+        if current == "等待添加文件...":
+            current = ""
+        self.log_output.setText(current + ("\n" if current else "") + text)

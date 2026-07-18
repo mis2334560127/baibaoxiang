@@ -3,6 +3,7 @@
 支持拖拽添加 PDF 文件、格式保留、批量转换。
 """
 import os
+import time
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
     QListWidget, QListWidgetItem, QProgressBar, QCheckBox, QComboBox,
@@ -39,6 +40,8 @@ class PdfWordPage(QWidget):
         self._files: list[str] = []
         self._worker: ConvertWorker | None = None
         self._config = get_config()
+        self._start_times: dict[str, float] = {}
+        self._elapsed_list: list[float] = []
 
         self._setup_ui()
         self._connect_signals()
@@ -47,13 +50,6 @@ class PdfWordPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(16)
-
-        # 广告位
-        ad = QLabel("📢  广告位（预留）")
-        ad.setObjectName("adBanner")
-        ad.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ad.setFixedHeight(44)
-        layout.addWidget(ad)
 
         # 拖拽区
         self.drop_zone = QLabel("📄  拖拽 PDF 文件到此处，或点击选择\n支持文字型 PDF 直接转换 · 扫描型 PDF 自动 OCR 识别")
@@ -333,6 +329,10 @@ class PdfWordPage(QWidget):
             except Exception:
                 total_pages += 1
         self.progress_bar.setMaximum(total_pages)
+        # 重置 ETA 追踪
+        self._start_times.clear()
+        self._elapsed_list.clear()
+
         self._log(f"🚀 开始转换 {len(self._files)} 个 PDF 文件（共 {total_pages} 页）")
         self._worker.start()
 
@@ -346,11 +346,30 @@ class PdfWordPage(QWidget):
     @pyqtSlot(int, int)
     def _on_progress(self, current: int, total: int):
         self.progress_bar.setValue(current)
+        msg = f"PDF 转换中 {current}/{total}"
+        if self._elapsed_list and current > 0:
+            avg = sum(self._elapsed_list) / len(self._elapsed_list)
+            remaining = avg * (total - current)
+            if remaining >= 60:
+                msg += f" | 预计剩余约 {remaining/60:.0f} 分 {remaining%60:.0f} 秒"
+            else:
+                msg += f" | 预计剩余约 {remaining:.0f} 秒"
+        if current >= total:
+            bus.status_message.emit("PDF 转换完成", 3000)
+        else:
+            bus.status_message.emit(msg, 0)
 
     @pyqtSlot(str, int, int)
     def _on_item_progress(self, filename: str, current: int, total: int):
         """PDF 页级实时进度（OCR 逐页识别 / pdf2docx 转换）"""
+        if current <= 1:
+            self._start_times[filename] = time.time()
         if current >= total:
+            start = self._start_times.pop(filename, None)
+            if start:
+                self._elapsed_list.append(time.time() - start)
+                if len(self._elapsed_list) > 20:
+                    self._elapsed_list.pop(0)
             self.progress_detail.setText(f"✅ {filename} 完成")
         elif total <= 1:
             # pdf2docx 黑盒模式：不显示页数，只显示正在转换
