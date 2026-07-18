@@ -12,7 +12,6 @@ from PyQt6.QtCore import Qt, pyqtSlot
 
 from src.config import AppConfig, THEMES, get_config, reload_config
 from src.signals import bus
-from src.modules.screen_recorder import _is_valid_ffmpeg
 from src.modules.ocr_recognizer import is_valid_tesseract
 
 
@@ -92,16 +91,6 @@ class SettingsPage(QWidget):
         out_row.addWidget(btn_browse)
         path_lay.addLayout(out_row)
 
-        ffmpeg_row = QHBoxLayout()
-        ffmpeg_row.addWidget(QLabel("FFmpeg 路径:"))
-        self.ffmpeg_input = QLineEdit()
-        self.ffmpeg_input.setPlaceholderText("留空则自动查找（PATH 或常见路径）")
-        ffmpeg_row.addWidget(self.ffmpeg_input)
-        btn_ffmpeg = QPushButton("浏览")
-        btn_ffmpeg.clicked.connect(self._browse_ffmpeg)
-        ffmpeg_row.addWidget(btn_ffmpeg)
-        path_lay.addLayout(ffmpeg_row)
-
         tess_row = QHBoxLayout()
         tess_row.addWidget(QLabel("Tesseract 路径:"))
         self.tesseract_input = QLineEdit()
@@ -162,7 +151,7 @@ class SettingsPage(QWidget):
         about_text = QLabel(
             "百宝箱 v1.0.0\n"
             "Windows 桌面效率小工具\n"
-            "技术栈：Python 3 + PyQt6 + Pillow + pdf2docx + FFmpeg\n"
+            "技术栈：Python 3 + PyQt6 + Pillow + pdf2docx + PaddleOCR\n"
             "所有功能本地运行，数据不上传\n"
             "© 2026 BaibaoBOX"
         )
@@ -186,7 +175,6 @@ class SettingsPage(QWidget):
     def _load_values(self):
         """从配置加载值到 UI"""
         self.output_dir_input.setText(self._config.get_output_dir())
-        self.ffmpeg_input.setText(self._config.ffmpeg_path)
         self.tesseract_input.setText(self._config.ocr_tesseract_path)
         self.ad_enabled_chk.setChecked(self._config.ad_enabled)
         self.ad_api_input.setText(self._config.ad_api_url)
@@ -222,13 +210,6 @@ class SettingsPage(QWidget):
         if folder:
             self.output_dir_input.setText(folder)
 
-    def _browse_ffmpeg(self):
-        file, _ = QFileDialog.getOpenFileName(
-            self, "选择 FFmpeg 可执行文件", "",
-            "可执行文件 (*.exe);;所有文件 (*.*)")
-        if file:
-            self.ffmpeg_input.setText(file)
-
     def _browse_tesseract(self):
         file, _ = QFileDialog.getOpenFileName(
             self, "选择 Tesseract OCR 可执行文件", "",
@@ -249,16 +230,6 @@ class SettingsPage(QWidget):
 
         # 路径
         self._config.output_dir = self.output_dir_input.text()
-        ffmpeg_path = self.ffmpeg_input.text().strip()
-        self._config.ffmpeg_path = ffmpeg_path
-
-        # 如果用户填写了自定义 FFmpeg 路径，进行有效性提示
-        if ffmpeg_path and not _is_valid_ffmpeg(ffmpeg_path):
-            QMessageBox.warning(
-                self, "FFmpeg 路径无效",
-                "填写的 FFmpeg 路径不是有效的 Windows 可执行文件，\n"
-                "录屏功能可能无法使用。请重新下载或留空使用自动查找。"
-            )
 
         tess_path = self.tesseract_input.text().strip()
         self._config.ocr_tesseract_path = tess_path

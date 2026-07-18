@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSlot
 from datetime import datetime
 
-from src.database import get_summary_stats, get_recent_compress, get_recent_convert, get_recent_records, get_recent_ocr
+from src.database import get_summary_stats, get_recent_compress, get_recent_convert, get_recent_ocr
 from src.signals import bus
 
 
@@ -33,13 +33,11 @@ class HomePage(QWidget):
 
         self.stat_compress = self._make_stat_card("📷", "图片压缩次数", "0")
         self.stat_convert = self._make_stat_card("📄", "PDF 转换次数", "0")
-        self.stat_record = self._make_stat_card("🎬", "屏幕录制次数", "0")
         self.stat_ocr = self._make_stat_card("🔍", "OCR 识别次数", "0")
         self.stat_saved = self._make_stat_card("💾", "累计节省空间", "0 MB")
 
         self.stats_layout.addWidget(self.stat_compress)
         self.stats_layout.addWidget(self.stat_convert)
-        self.stats_layout.addWidget(self.stat_record)
         self.stats_layout.addWidget(self.stat_ocr)
         self.stats_layout.addWidget(self.stat_saved)
         layout.addLayout(self.stats_layout)
@@ -55,7 +53,7 @@ class HomePage(QWidget):
         text_block = QVBoxLayout()
         title = QLabel("欢迎使用百宝箱")
         title.setStyleSheet("font-size: 20px; font-weight: bold; color: #FFFFFF;")
-        subtitle = QLabel("一站式图片压缩 · PDF 转 Word · 屏幕录制，全部本地处理，数据不上传")
+        subtitle = QLabel("一站式图片压缩 · PDF 转 Word · OCR 识别 · Excel 合并，全部本地处理，数据不上传")
         subtitle.setStyleSheet("font-size: 13px; color: rgba(255,255,255,0.85);")
         text_block.addWidget(title)
         text_block.addWidget(subtitle)
@@ -81,8 +79,8 @@ class HomePage(QWidget):
         cards_data = [
             ("📷", "图片批量压缩", "支持按大小/质量压缩，批量处理，专为政府网站上传优化", "compress"),
             ("📄", "PDF 转 Word", "保留原始格式，支持多页文档转换，一键输出 .docx", "pdf2word"),
-            ("🎬", "屏幕录制", "全屏/区域录制，H.264 编码，输出 MP4 格式", "recorder"),
             ("🔍", "图片 OCR", "批量识别图片文字，支持中文/英文/日文等，输出 TXT", "ocr"),
+            ("📊", "Excel 合并", "批量解压压缩包并合并 Excel 数据", "excel_merge"),
         ]
         self.quick_cards = []
         for icon, title_text, desc, target in cards_data:
@@ -150,7 +148,6 @@ class HomePage(QWidget):
             stats = get_summary_stats()
             self.stat_value_labels.get("图片压缩次数", QLabel("0")).setText(str(stats["total_compress"]))
             self.stat_value_labels.get("PDF 转换次数", QLabel("0")).setText(str(stats["total_convert"]))
-            self.stat_value_labels.get("屏幕录制次数", QLabel("0")).setText(str(stats["total_record"]))
             self.stat_value_labels.get("OCR 识别次数", QLabel("0")).setText(str(stats["total_ocr"]))
             self.stat_value_labels.get("累计节省空间", QLabel("0")).setText(f"{stats['saved_mb']} MB")
         except Exception:
@@ -166,9 +163,6 @@ class HomePage(QWidget):
             for c in get_recent_convert(3):
                 ts = c["created_at"][:16].replace("T", " ")
                 items.append((ts, f"[PDF转换] {c['file_name']} → .docx"))
-            for r in get_recent_records(3):
-                ts = r["created_at"][:16].replace("T", " ")
-                items.append((ts, f"[屏幕录制] {r['file_name']} - {r['duration_sec']}秒"))
             for o in get_recent_ocr(3):
                 ts = o["created_at"][:16].replace("T", " ")
                 text_len = o.get("text_length", 0)

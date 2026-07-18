@@ -6,7 +6,6 @@
 import os
 import time
 import tempfile
-import threading
 from pathlib import Path
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -352,47 +351,3 @@ class OcrWorker(QThread):
         bus.ocr_all_done.emit(success, fail)
 
 
-class RecordWorker(QThread):
-    """
-    屏幕录制线程
-    使用 pywin32 + FFmpeg 进程序幕捕获并编码。
-    运行在独立线程中，通过标志位控制启停。
-    """
-    record_finished = pyqtSignal(str)    # output path
-    record_error = pyqtSignal(str)
-
-    def __init__(self, output_path: str, fps: int = 15,
-                 codec: str = "libx264", fmt: str = "mp4",
-                 region: tuple | None = None, ffmpeg_path: str = ""):
-        super().__init__()
-        self.output_path = output_path
-        self.fps = fps
-        self.codec = codec
-        self.format = fmt
-        self.region = region       # (x, y, w, h) or None for full screen
-        self.ffmpeg_path = ffmpeg_path
-        self._stop_event = threading.Event()
-
-    def stop(self):
-        self._stop_event.set()
-
-    def run(self):
-        try:
-            from src.modules.screen_recorder import record_screen
-            clip_path, duration = record_screen(
-                output_path=self.output_path,
-                fps=self.fps,
-                codec=self.codec,
-                fmt=self.format,
-                region=self.region,
-                stop_event=self._stop_event,
-                ffmpeg_path=self.ffmpeg_path,
-            )
-            # 记录到数据库
-            from src.database import log_record
-            file_size_mb = os.path.getsize(clip_path) / (1024 * 1024) if os.path.exists(clip_path) else 0
-            log_record(os.path.basename(clip_path), clip_path,
-                       int(duration), file_size_mb)
-            self.record_finished.emit(clip_path)
-        except Exception as e:
-            self.record_error.emit(str(e))

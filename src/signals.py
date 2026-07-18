@@ -31,12 +31,7 @@ class SignalBus(QObject):
     convert_file_done = pyqtSignal(str, bool, str)
     convert_all_done = pyqtSignal(int, int)
 
-    # 录制状态
-    record_started = pyqtSignal()
-    record_stopped = pyqtSignal(str)          # output file path
-    record_error = pyqtSignal(str)
-
-    # 广告更新
+    # Excel合并进度
     ad_updated = pyqtSignal(str, str, str)    # (title, image_url, link_url)
     ad_cleared = pyqtSignal()
 

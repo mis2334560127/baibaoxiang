@@ -38,7 +38,6 @@ class AppConfig:
     theme: str = "blue"
     # 工作路径
     output_dir: str = ""          # 压缩/转换输出目录（空=用户选择）
-    ffmpeg_path: str = ""         # FFmpeg 路径（空=自动查找）
     # 广告位
     ad_enabled: bool = False
     ad_api_url: str = ""
@@ -54,10 +53,6 @@ class AppConfig:
     compress_mode: str = "size"   # "size" or "quality"
     compress_max_width: int = 0   # 0=不限制宽度
     compress_max_height: int = 0  # 0=不限制高度
-    # 录制默认参数
-    record_fps: int = 15
-    record_codec: str = "libx264"
-    record_format: str = "mp4"
     # PDF 默认参数
     pdf_preserve_formatting: bool = True
     pdf_preserve_images: bool = True

@@ -34,16 +34,6 @@ CREATE TABLE IF NOT EXISTS convert_history (
     created_at  TEXT    NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS record_history (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    file_name   TEXT    NOT NULL,
-    file_path   TEXT    NOT NULL,
-    duration_sec INTEGER,
-    file_size_mb REAL,
-    status      TEXT    DEFAULT 'success',
-    created_at  TEXT    NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS ad_cache (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ad_id       TEXT    UNIQUE NOT NULL,
@@ -69,7 +59,6 @@ CREATE TABLE IF NOT EXISTS ocr_history (
 
 CREATE INDEX IF NOT EXISTS idx_compress_ts ON compress_history(created_at);
 CREATE INDEX IF NOT EXISTS idx_convert_ts  ON convert_history(created_at);
-CREATE INDEX IF NOT EXISTS idx_record_ts   ON record_history(created_at);
 CREATE INDEX IF NOT EXISTS idx_ocr_ts      ON ocr_history(created_at);
 """
 
@@ -119,17 +108,6 @@ def log_convert(file_name: str, file_path: str, orig_pages: int,
         )
 
 
-def log_record(file_name: str, file_path: str, duration_sec: int,
-               file_size_mb: float, status: str = "success"):
-    with db_session() as conn:
-        conn.execute(
-            "INSERT INTO record_history (file_name,file_path,duration_sec,file_size_mb,status,created_at) "
-            "VALUES (?,?,?,?,?,?)",
-            (file_name, file_path, duration_sec, round(file_size_mb, 1),
-             status, datetime.now().isoformat())
-        )
-
-
 def log_ocr(file_name: str, file_path: str, text_length: int,
             text_preview: str = "", lang: str = "chi_sim+eng",
             status: str = "success"):
@@ -160,14 +138,6 @@ def get_recent_convert(limit: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def get_recent_records(limit: int = 20) -> list[dict]:
-    with db_session() as conn:
-        rows = conn.execute(
-            "SELECT * FROM record_history ORDER BY created_at DESC LIMIT ?", (limit,)
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
 def get_recent_ocr(limit: int = 20) -> list[dict]:
     with db_session() as conn:
         rows = conn.execute(
@@ -181,7 +151,6 @@ def get_summary_stats() -> dict:
     with db_session() as conn:
         total_compress = conn.execute("SELECT COUNT(*) as n FROM compress_history WHERE status='success'").fetchone()["n"]
         total_convert = conn.execute("SELECT COUNT(*) as n FROM convert_history WHERE status='success'").fetchone()["n"]
-        total_record = conn.execute("SELECT COUNT(*) as n FROM record_history WHERE status='success'").fetchone()["n"]
         total_ocr = conn.execute("SELECT COUNT(*) as n FROM ocr_history WHERE status='success'").fetchone()["n"]
         row = conn.execute(
             "SELECT SUM(orig_size_kb) as orig, SUM(final_size_kb) as final FROM compress_history WHERE status='success'"
@@ -190,7 +159,6 @@ def get_summary_stats() -> dict:
     return {
         "total_compress": total_compress,
         "total_convert": total_convert,
-        "total_record": total_record,
         "total_ocr": total_ocr,
         "saved_mb": round(saved_kb / 1024, 1),
     }

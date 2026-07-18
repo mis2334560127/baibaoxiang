@@ -1,55 +1,92 @@
-# 百宝箱 (BaibaoBOX) — 产品开发交付报告
+# 百宝箱 (BaibaoBox) 项目概览
 
-## 已完成
+## 项目简介
 
-按照产品原型和技术方案，完成了 **Windows 桌面应用《百宝箱》的完整代码开发**。
+百宝箱 (BaibaoBox) 是一款基于 Python 3.13 + PyQt6 构建的 Windows 桌面效率工具，提供图片批量压缩、PDF 转 Word、图片 OCR 文字识别、Excel 批量合并等实用功能。所有数据均在本地处理，不上传任何服务器。
 
-### 代码规模
-- **18 个 Python 源文件** — 全部通过语法检查（0 错误）
-- **5 套 QSS 主题** — 海天蓝/青翠绿/星空紫/暖阳橙/玫瑰红
-- **1 个打包脚本** (build.py)
-- **1 个依赖清单** (requirements.txt)
+## 技术架构
 
-### 三层架构
+- **后端**: Python 3.13
+- **UI**: PyQt6（QStackedWidget 多页面 + 侧边栏导航）
+- **数据库**: SQLite（wal 模式，通过 db_session() 上下文管理器管理连接）
+- **配置**: dataclass + JSON 持久化
+- **线程**: QThread（所有耗时操作在后台线程执行）
+- **主题**: 5 套 QSS 样式表（blue / teal / purple / amber / rose）
+
+## 项目结构
 
 ```
-┌─────────────────────────────────┐
-│  UI 层 (pages/)                  │
-│  首页 压缩 PDF转换 录制 指南 设置 │
-├─────────────────────────────────┤
-│  逻辑层 (modules/)               │
-│  图片压缩 PDF转换 屏幕录制 广告   │
-├─────────────────────────────────┤
-│  基础设施 (core)                 │
-│  配置 数据库 信号总线 工作线程    │
-└─────────────────────────────────┘
+main.py — 入口
+src/
+├── config.py              # 全局配置
+├── database.py            # SQLite 操作
+├── signals.py             # SignalBus 信号总线
+├── worker_threads.py      # QThread 后台线程
+├── main_window.py         # 主窗口（侧边栏 + QStackedWidget）
+├── modules/
+│   ├── image_compressor.py   # 图片压缩
+│   ├── pdf_converter.py      # PDF→Word 转换
+│   ├── excel_merger.py       # Excel 批量合并
+│   ├── ocr_recognizer.py     # OCR 文字识别
+│   └── ad_manager.py         # 广告位管理
+├── pages/
+│   ├── home_page.py         # 首页仪表盘
+│   ├── compress_page.py     # 图片压缩
+│   ├── pdf_word_page.py     # PDF 转 Word
+│   ├── ocr_page.py          # OCR 识别
+│   ├── excel_merge_page.py  # Excel 合并
+│   ├── guide_page.py        # 使用指南
+│   └── settings_page.py     # 系统设置
+└── theme/                  # 5 套 QSS 主题
 ```
 
-### 6 个页面功能
-| 页面 | 核心交互 |
-|------|---------|
-| 首页总览 | 4 统计卡片 + 3 快捷入口 + 历史记录时间线 |
-| 图片压缩 | 拖拽上传 + 按大小/按质量双模式 + 批量进度 |
-| PDF转Word | 拖拽添加 + 格式保留选项 + 批量转换 |
-| 屏幕录制 | 录制控制台 + 实时计时器 + 编码器选择 |
-| 使用指南 | 安装步骤/功能操作/FAQ 三标签页 |
-| 系统设置 | 5色主题即时切换 + 路径配置 + 广告位API |
+## 核心功能
 
-### 技术特性
-- **全部本地运行**：图片压缩(Pillow)、PDF转换(pdf2docx)、屏幕录制(pywin32+FFmpeg) 均不依赖网络
-- **主题即时切换**：QSS + 信号总线 实现毫秒级换肤
-- **广告位预留**：独立 AdManager 后台线程，静默降级，SQLite 缓存
-- **历史记录**：SQLite 持久化所有操作，首页自动展示
+### 1. 图片批量压缩
+- 支持按目标文件大小压缩（二分搜索逼近算法）
+- 支持按质量百分比压缩
+- 批量处理 JPG/JPEG/PNG/BMP/WebP/TIFF
+- RGBA/调色板模式自动转 RGB
 
-### 启动方式
-```bash
-cd D:\AIProject\baibaoxiang
-.venv\Scripts\pip install -r requirements.txt
-.venv\Scripts\python main.py
-```
+### 2. PDF 转 Word
+- 文字型 PDF：pdf2docx 直接转换
+- 扫描型 PDF：PaddleOCR + Tesseract 双引擎识别
+- 混合型 PDF：自动路由各页
+- 支持保留图片和保留原始格式选项
 
-### 待补充
-- 应用图标 (.ico)
-- Inno Setup 安装包脚本
-- FFmpeg 自动下载引导流程
-- 依赖安装（PyQt6 大包正在后台下载中）
+### 3. 图片 OCR 文字识别
+- 基于 pytesseract 批量识别
+- 支持中文/英文/日文/韩文等多种语言
+- 独立 TXT 输出或合并输出
+
+### 4. Excel 批量合并
+- 解压 zip/rar/7z 压缩包
+- 提取所有 Excel 文件
+- 统一表头后合并写入单个 Excel
+
+### 5. 主题系统
+- 5 套 QSS 样式表
+- 支持侧边栏色点和设置页面切换
+- 偏好自动保存
+
+### 6. 预留广告模块
+- 单例模式 + 独立 daemon 线程
+- 远程 JSON API 拉取
+- 支持 Bearer Token 认证
+- 静默降级（失败回退 SQLite 缓存）
+- 默认关闭，用户可配置
+
+## 窗口关闭保护
+
+主窗口 `closeEvent` 按顺序：
+1. 停止广告拉取线程
+2. 保存窗口尺寸和最大化状态到配置
+
+## 数据存储
+
+- **用户配置**: `data/config.json`（打包后 `%APPDATA%\BaibaoBOX\config.json`）
+- **历史记录**: `data/baibaobox.db`（SQLite，WAL 模式）
+  - `compress_history` — 图片压缩记录
+  - `convert_history` — PDF 转换记录
+  - `ocr_history` — OCR 识别记录
+  - `ad_cache` — 广告缓存

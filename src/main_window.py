@@ -9,15 +9,15 @@ from PyQt6.QtWidgets import (
     QPushButton, QStackedWidget, QFrame, QButtonGroup,
     QStatusBar, QApplication
 )
-from PyQt6.QtCore import Qt, pyqtSlot, QSize, QTimer
-from PyQt6.QtGui import QIcon, QFont
+from PyQt6.QtCore import Qt, pyqtSlot, QTimer
+from PyQt6.QtGui import QIcon
 
 from src.config import AppConfig, THEMES, get_config
 from src.signals import bus
 from src.pages.home_page import HomePage
 from src.pages.compress_page import CompressPage
 from src.pages.pdf_word_page import PdfWordPage
-from src.pages.recorder_page import RecorderPage
+
 from src.pages.guide_page import GuidePage
 from src.pages.settings_page import SettingsPage
 from src.pages.excel_merge_page import ExcelMergePage
@@ -28,7 +28,7 @@ NAV_ITEMS = [
     {"id": "home",         "icon": "🏠", "label": "首页总览",     "tip": "使用统计与快捷入口"},
     {"id": "compress",     "icon": "📷", "label": "图片压缩",     "tip": "批量压缩图片，支持按大小/质量"},
     {"id": "pdf2word",     "icon": "📄", "label": "PDF 转 Word",  "tip": "将 PDF 文档转换为可编辑 Word"},
-    {"id": "recorder",     "icon": "🎬", "label": "屏幕录制",     "tip": "全屏/区域录制，输出 MP4"},
+
     {"id": "excel_merge",  "icon": "📊", "label": "Excel 合并",   "tip": "批量解压压缩包并合并 Excel 数据"},
     {"id": "ocr",          "icon": "🔍", "label": "图片 OCR",     "tip": "批量识别图片中的文字并输出 TXT"},
     {"id": "guide",        "icon": "📖", "label": "使用指南",     "tip": "安装步骤、操作说明、常见问题"},
@@ -187,7 +187,6 @@ class MainWindow(QMainWindow):
         self._pages["home"] = HomePage()
         self._pages["compress"] = CompressPage()
         self._pages["pdf2word"] = PdfWordPage()
-        self._pages["recorder"] = RecorderPage()
         self._pages["excel_merge"] = ExcelMergePage()
         self._pages["ocr"] = OcrPage()
         self._pages["guide"] = GuidePage()
@@ -251,12 +250,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """窗口关闭时安全停止所有后台任务并保存状态"""
-        # 1. 优先停止正在进行的屏幕录制（防止 FFmpeg 孤儿进程 + 磁盘泄漏）
-        recorder = self._pages.get("recorder")
-        if recorder and recorder._is_recording:
-            recorder._stop_recording()
-            QApplication.processEvents()
-        # 2. 停止广告拉取
+        # 1. 停止广告拉取
         try:
             from src.modules.ad_manager import AdManager
             AdManager().stop()
