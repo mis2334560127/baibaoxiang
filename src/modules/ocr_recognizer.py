@@ -6,6 +6,7 @@
 语言支持：中文 (ch)、英文 (en)、日文 (jpn)、韩文 (kor) 等
 """
 import os
+import sys
 import shutil
 from pathlib import Path
 
@@ -21,28 +22,109 @@ TESSERACT_LOCATIONS = [
 ]
 
 _PADDLEOCR_INSTANCE = None
+_PADDLEOCR_AVAILABLE = None  # None=未检测, True/False
+_PADDLEOCR_ERROR_MSG = ""   # 记录 PaddleOCR 不可用的具体原因
+
+
+def _paddleocr_importable() -> bool:
+    """检测 paddleocr 是否能正常 import（非阻塞）"""
+    global _PADDLEOCR_AVAILABLE, _PADDLEOCR_ERROR_MSG
+    if _PADDLEOCR_AVAILABLE is not None:
+        return _PADDLEOCR_AVAILABLE
+    # 冻结环境中提前强制设置 PADDLE_OCR_HOME（必须在 import paddle 前生效）
+    if getattr(sys, "frozen", False):
+        ocr_home = os.path.join(_get_appdata_dir(), ".paddleocr")
+        os.makedirs(ocr_home, exist_ok=True)
+        os.environ["PADDLE_OCR_HOME"] = ocr_home
+    try:
+        import paddleocr  # noqa: F401
+        _PADDLEOCR_AVAILABLE = True
+    except Exception as e:
+        _PADDLEOCR_AVAILABLE = False
+        _PADDLEOCR_ERROR_MSG = str(e)
+    return _PADDLEOCR_AVAILABLE
+
+
+def pre_check_ocr(tesseract_path: str = "") -> dict:
+    """
+    在启动时预检 OCR 可用性，返回状态报告。
+    用于首页/设置页展示。
+
+    Returns:
+        {"paddleocr": bool, "tesseract": bool, "tesseract_path": str, "ready": bool}
+    """
+    # 先检测 import 是否可用
+    paddle_importable = _paddleocr_importable()
+    paddle_ready = paddle_importable
+
+    # 如果 import 可用，进一步尝试创建 PaddleOCR 实例以验证模型完整性
+    if paddle_importable and _PADDLEOCR_INSTANCE is None:
+        try:
+            _get_paddleocr("en")  # 用英文（模型较小）做预加载
+            _PADDLEOCR_AVAILABLE = True
+        except Exception as e:
+            _PADDLEOCR_AVAILABLE = False
+            _PADDLEOCR_ERROR_MSG = str(e)
+            paddle_ready = False
+
+    status = {
+        "paddleocr": paddle_ready,
+        "tesseract": False,
+        "tesseract_path": tesseract_path or "",
+        "ready": False,
+    }
+    if tesseract_path:
+        status["tesseract"] = is_valid_tesseract(tesseract_path)
+    if not status["tesseract"]:
+        status["tesseract_path"] = find_tesseract()
+        status["tesseract"] = bool(status["tesseract_path"])
+    status["ready"] = status["tesseract"] or paddle_ready
+    return status
+
+
+def _get_appdata_dir() -> str:
+    """获取应用数据目录，用于存放 PaddleOCR 模型"""
+    if getattr(sys, "frozen", False):
+        base = os.environ.get("APPDATA", os.path.expanduser("~"))
+        app_dir = os.path.join(base, "BaibaoBOX")
+    else:
+        app_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
+    os.makedirs(app_dir, exist_ok=True)
+    return app_dir
 
 
 def _get_paddleocr(lang: str = "ch"):
     """获取/复用 PaddleOCR 单例（避免重复加载模型）"""
-    global _PADDLEOCR_INSTANCE
-    if _PADDLEOCR_INSTANCE is None:
-        # 将 lang 映射为 PaddleOCR 格式
-        # PaddleOCR 支持: ch, en, japan, korean, french, german, etc.
-        paddle_lang = lang
-        lang_map = {
-            "chi_sim": "ch",
-            "chi_sim+eng": "ch",
-            "chi_tra": "chinese_cht",
-            "eng": "en",
-            "jpn": "japan",
-            "kor": "korean",
-            "fra": "french",
-            "deu": "german",
-            "rus": "russian",
-            "spa": "spanish",
-        }
-        mapped = lang_map.get(lang, lang)
+    global _PADDLEOCR_INSTANCE, _PADDLEOCR_AVAILABLE, _PADDLEOCR_ERROR_MSG
+    if _PADDLEOCR_INSTANCE is not None:
+        return _PADDLEOCR_INSTANCE
+    if _PADDLEOCR_AVAILABLE is False:
+        raise ImportError(f"PaddleOCR 不可用: {_PADDLEOCR_ERROR_MSG or '未知原因'}")
+
+    # 冻结环境中强制设置 PADDLE_OCR_HOME 到用户数据目录，避免写权限问题
+    # 必须使用直接赋值（而非 setdefault）以覆盖可能存在的旧值
+    if getattr(sys, "frozen", False):
+        ocr_home = os.path.join(_get_appdata_dir(), ".paddleocr")
+        os.makedirs(ocr_home, exist_ok=True)
+        os.environ["PADDLE_OCR_HOME"] = ocr_home
+
+    # 将 lang 映射为 PaddleOCR 格式
+    # PaddleOCR 支持: ch, en, japan, korean, french, german, etc.
+    paddle_lang = lang
+    lang_map = {
+        "chi_sim": "ch",
+        "chi_sim+eng": "ch",
+        "chi_tra": "chinese_cht",
+        "eng": "en",
+        "jpn": "japan",
+        "kor": "korean",
+        "fra": "french",
+        "deu": "german",
+        "rus": "russian",
+        "spa": "spanish",
+    }
+    mapped = lang_map.get(lang, lang)
+    try:
         from paddleocr import PaddleOCR
         _PADDLEOCR_INSTANCE = PaddleOCR(
             use_angle_cls=True,
@@ -50,6 +132,10 @@ def _get_paddleocr(lang: str = "ch"):
             show_log=False,
             use_gpu=False,
         )
+    except Exception as e:
+        _PADDLEOCR_AVAILABLE = False
+        _PADDLEOCR_ERROR_MSG = str(e)
+        raise ImportError(f"PaddleOCR 初始化失败: {e}")
     return _PADDLEOCR_INSTANCE
 
 
@@ -200,13 +286,20 @@ def recognize_image(
             return _fallback_tesseract(file_path, tesseract_path, lang, progress_callback)
 
     except ImportError:
-        # paddleocr 未安装，降级到 tesseract
-        return _fallback_tesseract(file_path, tesseract_path, lang, progress_callback)
+        # paddleocr 不可用，降级到 tesseract
+        return _fallback_tesseract(
+            file_path, tesseract_path, lang, progress_callback,
+            paddle_error=_PADDLEOCR_ERROR_MSG,
+        )
     except Exception as e:
         # PaddleOCR 出错，降级到 tesseract
         import warnings
-        warnings.warn(f"PaddleOCR 识别失败 ({e})，降级到 Tesseract...")
-        return _fallback_tesseract(file_path, tesseract_path, lang, progress_callback)
+        msg = f"PaddleOCR 识别失败 ({e})，降级到 Tesseract..."
+        warnings.warn(msg)
+        return _fallback_tesseract(
+            file_path, tesseract_path, lang, progress_callback,
+            paddle_error=str(e),
+        )
 
 
 def _fallback_tesseract(
@@ -214,16 +307,24 @@ def _fallback_tesseract(
     tesseract_path: str = "",
     lang: str = "chi_sim+eng",
     progress_callback=None,
+    paddle_error: str = "",
 ) -> str:
     """
     PaddleOCR 不可用时的 Tesseract 降级方案。
     """
     tess_exe = tesseract_path or find_tesseract()
     if not tess_exe:
+        detail = ""
+        if paddle_error:
+            detail = f"\n\n📋 PaddleOCR 失败原因：{paddle_error}"
         raise RuntimeError(
-            "未找到可用的 OCR 引擎。\n"
-            "已安装 PaddleOCR 但识别失败，且系统未安装 Tesseract-OCR。\n"
-            "请确认 paddleocr 安装正确，或在「设置」页面指定 tesseract.exe 路径。"
+            "未找到可用的 OCR 引擎。\n\n"
+            "请尝试以下方案（任选其一）：\n"
+            "1. 安装项目附带的 Tesseract-OCR（推荐）：运行项目目录下的\n"
+            "   tesseract-ocr-w64-setup-5.5.0.20241111.exe\n"
+            "2. 在「设置」页面 > OCR 设置 > 指定已安装的 tesseract.exe 路径\n"
+            "3. 确认网络畅通，关闭后重新打开程序，让 PaddleOCR 自动下载模型\n"
+            f"{detail}"
         )
 
     import pytesseract

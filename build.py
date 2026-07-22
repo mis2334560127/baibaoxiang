@@ -45,9 +45,44 @@ def build_exe():
         "--icon=NONE",
         "--clean",
         "--noconfirm",
+        # ── OCR 相关：确保 PaddleOCR + pytesseract 被正确打包 ──
+        "--hidden-import", "paddleocr",
+        "--hidden-import", "paddle",
+        "--hidden-import", "pytesseract",
+        "--hidden-import", "paddle.nn",
+        "--hidden-import", "paddle.fluid",
+        "--hidden-import", "paddle.tensor",
+        "--hidden-import", "paddle.static",
+        "--hidden-import", "paddle.jit",
+        "--hidden-import", "paddle.distributed",
+        "--hidden-import", "paddle.vision",
+        "--hidden-import", "ppocr",
+        "--hidden-import", "ppocr.postprocess",
+        "--hidden-import", "ppocr.utils",
+        "--hidden-import", "ppocr.data",
+        "--hidden-import", "pyclipper",       # PaddleOCR 多边形裁剪依赖
+        "--hidden-import", "shapely",         # PaddleOCR 几何运算依赖
+        "--hidden-import", "shapely.geometry",
+        "--hidden-import", "skimage",         # Paddle 图像处理依赖
+        "--hidden-import", "skimage.metrics",
+        "--collect-all", "paddleocr",
+        "--collect-all", "paddle",
+        "--collect-all", "ppocr",
+        "--collect-binaries", "paddle",
+        # ── 数据库 ──
+        "--hidden-import", "sqlite3",
+        # ── 压缩包 ──
+        "--hidden-import", "py7zr",
+        "--hidden-import", "rarfile",
     ]
 
-    print("[打包] 正在打包...")
+    # ── 额外用到的 PIL 插件 ──
+    from PIL import features
+    for codec in ["webp", "webp_anim", "tiff", "tiff_lzw", "jpg", "jpeg"]:
+        if features.check(codec):
+            args.extend(["--hidden-import", f"PIL.{codec.upper() if codec in ('jpg','jpeg') else codec}"])
+
+    print("[打包] 正在打包（含 OCR 模型，预计 3-8 分钟）...")
     PyInstaller.__main__.run(args)
 
     print("\n[完成] 打包完成!")

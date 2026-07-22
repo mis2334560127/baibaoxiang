@@ -13,7 +13,7 @@ if _PROJECT_ROOT not in sys.path:
 
 def main():
     from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtCore import Qt
+    from PyQt6.QtCore import Qt, QTimer
     from src.main_window import MainWindow
     from src.config import get_config
 
@@ -55,7 +55,24 @@ def main():
     window = MainWindow()
     window.show()
 
+    # 非阻塞预检 OCR 引擎可用性（延迟到主窗口显示后）
+    QTimer.singleShot(500, _check_ocr_ready)
+
     sys.exit(app.exec())
+
+
+def _check_ocr_ready() -> None:
+    """后台预检 OCR 引擎，若不可用则在状态栏提示"""
+    from src.config import get_config
+    from src.modules.ocr_recognizer import pre_check_ocr
+
+    cfg = get_config()
+    status = pre_check_ocr(tesseract_path=cfg.ocr_tesseract_path)
+    if not status["ready"]:
+        from src.signals import get_bus
+        get_bus().status_message.emit(
+            "⚠️ OCR 引擎未就绪，请安装 Tesseract-OCR 或在设置中配置", 0
+        )
 
 
 if __name__ == "__main__":
